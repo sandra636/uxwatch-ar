@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LuxWatch AR — Essayage Virtuel de Montre</title>
+  <meta name="description" content="Essayez virtuellement nos montres de luxe en réalité augmentée directement depuis votre navigateur." />
+  <meta name="theme-color" content="#0a0a0f" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+
+  <!-- Three.js r128 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
+
+  <!-- MediaPipe Hands -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+  <link rel="stylesheet" href="css/style.css" />
+
+  <style>
+    /* Fix critique : le canvas Three.js doit être en position absolute sur le viewport */
+    #three-canvas {
+      position: absolute !important;
+      top: 0; left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      pointer-events: none;
+      z-index: 10;
+    }
+    #landmark-canvas {
+      position: absolute !important;
+      top: 0; left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      pointer-events: none;
+      z-index: 11;
+      opacity: 0.85;
+    }
+    #camera-feed {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #camera-feed:not(.rear) {
+      transform: scaleX(-1); /* miroir caméra frontale */
+    }
+    #ar-viewport {
+      position: relative;
+      width: 100%;
+      flex: 1;
+      overflow: hidden;
+      background: #000;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOADER -->
+  <div id="loader">
+    <div class="loader-inner">
+      <div class="loader-logo">
+        <span class="loader-brand">LuxWatch</span>
+        <span class="loader-sub">AUGMENTED REALITY</span>
+      </div>
+      <div class="loader-ring">
+        <svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="40" cy="40" r="36" stroke="url(#lg)" stroke-width="1.5" fill="none"
+                  stroke-dasharray="226" stroke-dashoffset="226">
+            <animate attributeName="stroke-dashoffset" from="226" to="0" dur="1.8s" fill="freeze" />
+          </circle>
+          <defs>
+            <linearGradient id="lg" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#c9a96e"/>
+              <stop offset="100%" stop-color="#f0d9a8"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div class="loader-steps">
+        <p id="loader-msg">Initialisation de la caméra…</p>
+        <div class="loader-bar"><div class="loader-bar-fill" id="loader-bar-fill"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PERMISSION -->
+  <div id="permission-overlay" class="hidden">
+    <div class="perm-card">
+      <div class="perm-icon">📷</div>
+      <h2>Accès caméra requis</h2>
+      <p>LuxWatch AR a besoin d'accéder à votre caméra pour l'essayage virtuel.</p>
+      <button id="btn-allow-cam" class="btn-primary">Autoriser la caméra</button>
+    </div>
+  </div>
+
+  <!-- APP -->
+  <div id="app" class="hidden">
+
+    <header id="header">
+      <div class="header-left">
+        <span class="brand-name">LuxWatch</span>
+        <span class="brand-tagline">AR Try-On</span>
+      </div>
+      <div class="header-center">
+        <div id="status-pill">
+          <span class="status-dot" id="status-dot"></span>
+          <span id="status-text">Détection en cours…</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <button id="btn-flip" class="icon-btn" title="Retourner la caméra">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 14s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+            <line x1="4" y1="20" x2="20" y2="20"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div id="ar-viewport">
+      <video id="camera-feed" autoplay playsinline muted></video>
+      <canvas id="three-canvas"></canvas>
+      <canvas id="landmark-canvas"></canvas>
+
+      <div id="scan-reticle" class="hidden">
+        <div class="reticle-corner tl"></div>
+        <div class="reticle-corner tr"></div>
+        <div class="reticle-corner bl"></div>
+        <div class="reticle-corner br"></div>
+        <p class="reticle-hint">📷 Montrez votre main entière</p>
+      </div>
+
+      <div id="detected-badge" class="hidden">
+        <span>✦ Main détectée</span>
+      </div>
+
+      <div id="fps-counter">0 FPS</div>
+    </div>
+
+    <div id="bottom-panel">
+      <div id="watch-selector-wrap">
+        <p class="panel-label">Choisissez votre montre</p>
+        <div id="watch-selector">
+          <button class="watch-thumb active" data-watch="0" aria-label="Montre 1">
+            <img src="assets/images/w1.svg" alt="Classic Gold" onerror="this.style.display='none'" />
+            <span>Classic Gold</span>
+          </button>
+          <button class="watch-thumb" data-watch="1" aria-label="Montre 2">
+            <img src="assets/images/w2.svg" alt="Silver Sport" onerror="this.style.display='none'" />
+            <span>Silver Sport</span>
+          </button>
+          <button class="watch-thumb" data-watch="2" aria-label="Montre 3">
+            <img src="assets/images/w3.svg" alt="Black Edition" onerror="this.style.display='none'" />
+            <span>Black Edition</span>
+          </button>
+        </div>
+      </div>
+
+      <div id="info-strip">
+        <div class="info-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span id="watch-name-display">Classic Gold</span>
+        </div>
+        <div class="info-separator"></div>
+        <div class="info-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+          <span>Suivi en temps réel</span>
+        </div>
+        <div class="info-separator"></div>
+        <div class="info-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>AR Haute précision</span>
+        </div>
+      </div>
+
+      <p class="tip-text">💡 Montrez la main entière, bon éclairage, 30–60 cm de la caméra</p>
+    </div>
+
+  </div>
+
+  <!-- ERREUR -->
+  <div id="error-screen" class="hidden">
+    <div class="error-card">
+      <div class="error-icon">⚠️</div>
+      <h2>Problème de caméra</h2>
+      <p id="error-msg">Impossible d'accéder à votre caméra. Vérifiez les permissions.</p>
+      <button onclick="location.reload()" class="btn-primary">Réessayer</button>
+    </div>
+  </div>
+
+  <script src="js/watch-models.js"></script>
+  <script src="js/three-scene.js"></script>
+  <script src="js/mediapipe-hands.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
