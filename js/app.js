@@ -1,9 +1,6 @@
 /**
- * app.js — VERSION CORRIGÉE
- * Corrections :
- *  - Vidéo play() avant MediaPipe
- *  - Debug canvas visible par défaut pour vérifier la détection
- *  - Gestion d'erreurs améliorée
+ * app.js — VERSION CORRIGÉE v3
+ * Fix : caméra arrière stable, ne repasse plus en frontale
  */
 
 'use strict';
@@ -13,7 +10,7 @@ const state = {
   threeScene:   null,
   handTracker:  null,
   currentWatch: 0,
-  useFrontCam:  false, // CORRIGÉ : false = essayer caméra arrière en premier
+  useFrontCam:  false, // false = caméra arrière par défaut
   rafId:        null,
 };
 
@@ -40,12 +37,12 @@ const DOM = {
 };
 
 const LOAD_STEPS = [
-  { msg: 'Initialisation du moteur 3D…',      pct: 15 },
-  { msg: 'Chargement des modèles de montres…', pct: 35 },
-  { msg: 'Activation de MediaPipe Hands…',     pct: 55 },
-  { msg: 'Connexion à la caméra…',             pct: 75 },
-  { msg: 'Calibration AR…',                    pct: 90 },
-  { msg: 'Prêt !',                             pct: 100 },
+  { msg: 'Initialisation du moteur 3D…',       pct: 15 },
+  { msg: 'Chargement des modèles de montres…',  pct: 35 },
+  { msg: 'Activation de MediaPipe Hands…',      pct: 55 },
+  { msg: 'Connexion à la caméra…',              pct: 75 },
+  { msg: 'Calibration AR…',                     pct: 90 },
+  { msg: 'Prêt !',                              pct: 100 },
 ];
 
 function setLoaderStep(index) {
@@ -61,15 +58,16 @@ function hideLoader() {
 }
 
 function setStatus(type, text) {
-  DOM.statusDot.className   = 'status-dot ' + (type || '');
+  DOM.statusDot.className    = 'status-dot ' + (type || '');
   DOM.statusText.textContent = text;
 }
 
 /* ── Caméra ──────────────────────────────────────────────────── */
-async function requestCamera(preferRear = true) {
+async function requestCamera(wantRear) {
+  // Essayer d'abord avec la contrainte souhaitée
   const constraints = {
     video: {
-      facingMode: preferRear ? 'environment' : 'user',
+      facingMode: wantRear ? 'environment' : 'user',
       width:      { ideal: 1280 },
       height:     { ideal: 720 },
       frameRate:  { ideal: 30 },
@@ -79,39 +77,59 @@ async function requestCamera(preferRear = true) {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    const track    = stream.getVideoTracks()[0];
-    const settings = track.getSettings();
-    state.useFrontCam = settings.facingMode !== 'environment';
+    // Mettre à jour l'état selon ce qu'on a vraiment obtenu
+    const settings = stream.getVideoTracks()[0].getSettings();
+    state.useFrontCam = (settings.facingMode === 'user' || settings.facingMode !== 'environment');
+    // Appliquer le miroir uniquement pour caméra frontale
     DOM.camFeed.classList.toggle('rear', !state.useFrontCam);
     return stream;
   } catch (err) {
-    if (preferRear) {
-      console.warn('Caméra arrière indisponible, fallback…', err);
-      return requestCamera(false);
-    }
-    throw err;
+    // Fallback sans contrainte facingMode
+    console.warn('Contrainte facingMode échouée, fallback sans contrainte', err);
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    });
+    state.useFrontCam = true; // on ne sait pas, supposer frontale
+    DOM.camFeed.classList.remove('rear');
+    return stream;
   }
 }
 
+/* ── Flip caméra ─────────────────────────────────────────────── */
 async function flipCamera() {
   if (!state.stream) return;
-  if (state.handTracker) state.handTracker.stop();
+
+  // Arrêter tracker et flux actuels
+  if (state.handTracker) {
+    state.handTracker.stop();
+    state.handTracker = null;
+  }
   state.stream.getTracks().forEach(t => t.stop());
   DOM.camFeed.srcObject = null;
 
+  // Inverser la caméra voulue
+  const wantRear = state.useFrontCam; // si on était en frontale → passer en arrière
+
   try {
-    const stream = await requestCamera(state.useFrontCam);
-    state.stream  = stream;
+    const stream = await requestCamera(wantRear);
+    state.stream = stream;
     DOM.camFeed.srcObject = stream;
     await DOM.camFeed.play();
 
-    // Relancer le tracker avec le nouveau flux
+    // Resynchroniser canvas debug
+    await new Promise(res => setTimeout(res, 300));
+    DOM.lmCanvas.width  = DOM.camFeed.videoWidth  || 640;
+    DOM.lmCanvas.height = DOM.camFeed.videoHeight || 480;
+
+    // Relancer le tracker
     state.handTracker = new HandTracker(
       DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
     );
     await state.handTracker.start(stream);
   } catch (err) {
-    console.error('Impossible de changer de caméra', err);
+    console.error('Impossible de changer de caméra :', err);
+    setStatus('', 'Changement de caméra impossible');
   }
 }
 
@@ -141,7 +159,7 @@ async function init() {
   try {
     state.threeScene = new ThreeScene(DOM.threeCanvas);
   } catch (e) {
-    console.error('Erreur Three.js:', e);
+    console.error('Erreur Three.js :', e);
     showError('Erreur de chargement 3D. Rechargez la page.');
     return;
   }
@@ -149,13 +167,13 @@ async function init() {
   await delay(300);
   setLoaderStep(2);
 
-  // 2. Caméra
+  // 2. Caméra — demander la caméra arrière d'emblée
   let stream;
   try {
-    stream = await requestCamera(true);
+    stream = await requestCamera(true); // true = arrière
     state.stream = stream;
   } catch (err) {
-    console.warn('getUserMedia échoué:', err);
+    console.warn('getUserMedia échoué :', err);
     hideLoader();
     DOM.permOverlay.classList.remove('hidden');
     return;
@@ -168,8 +186,8 @@ async function startWithStream(stream) {
   setLoaderStep(3);
   state.stream = stream;
 
-  DOM.camFeed.srcObject = stream;
-  DOM.camFeed.muted = true;
+  DOM.camFeed.srcObject  = stream;
+  DOM.camFeed.muted      = true;
   DOM.camFeed.playsInline = true;
 
   // Attendre metadata
@@ -178,20 +196,16 @@ async function startWithStream(stream) {
     DOM.camFeed.onloadedmetadata = res;
   });
 
-  // Jouer la vidéo AVANT MediaPipe
+  // Jouer la vidéo avant MediaPipe
   try {
     await DOM.camFeed.play();
-  } catch(e) {
-    console.warn('play() échoué (autoplay bloqué?):', e);
+  } catch (e) {
+    console.warn('play() bloqué :', e);
   }
 
   // Sync canvas debug
   DOM.lmCanvas.width  = DOM.camFeed.videoWidth  || 640;
   DOM.lmCanvas.height = DOM.camFeed.videoHeight || 480;
-
-  // Rendre le canvas debug visible pour voir les landmarks
-  DOM.lmCanvas.style.opacity = '1';
-  DOM.lmCanvas.style.display = 'block';
 
   setLoaderStep(4);
   await delay(400);
@@ -200,15 +214,12 @@ async function startWithStream(stream) {
   setStatus('scanning', 'Initialisation du suivi…');
   try {
     state.handTracker = new HandTracker(
-      DOM.camFeed,
-      DOM.lmCanvas,
-      onWristPose,
-      onTrackingStatus
+      DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
     );
     await state.handTracker.start(stream);
   } catch (e) {
-    console.error('Erreur MediaPipe:', e);
-    setStatus('', 'Erreur de détection — rechargez');
+    console.error('Erreur MediaPipe :', e);
+    setStatus('', 'Erreur détection — rechargez');
   }
 
   setLoaderStep(5);
