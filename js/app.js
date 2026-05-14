@@ -1,6 +1,6 @@
 /**
- * app.js — VERSION CORRIGÉE v3
- * Fix : caméra arrière stable, ne repasse plus en frontale
+ * app.js — VERSION CORRIGÉE v4
+ * Fix : caméra arrière forcée, pas de vérification facingMode
  */
 
 'use strict';
@@ -10,7 +10,7 @@ const state = {
   threeScene:   null,
   handTracker:  null,
   currentWatch: 0,
-  useFrontCam:  false, // false = caméra arrière par défaut
+  useFrontCam:  false,
   rafId:        null,
 };
 
@@ -64,7 +64,6 @@ function setStatus(type, text) {
 
 /* ── Caméra ──────────────────────────────────────────────────── */
 async function requestCamera(wantRear) {
-  // Essayer d'abord avec la contrainte souhaitée
   const constraints = {
     video: {
       facingMode: wantRear ? 'environment' : 'user',
@@ -77,20 +76,17 @@ async function requestCamera(wantRear) {
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    // Mettre à jour l'état selon ce qu'on a vraiment obtenu
-    const settings = stream.getVideoTracks()[0].getSettings();
-    state.useFrontCam = (settings.facingMode === 'user' || settings.facingMode !== 'environment');
-    // Appliquer le miroir uniquement pour caméra frontale
-    DOM.camFeed.classList.toggle('rear', !state.useFrontCam);
+    // On fait confiance à ce qu'on a demandé — pas de vérification facingMode
+    state.useFrontCam = !wantRear;
+    DOM.camFeed.classList.toggle('rear', wantRear);
     return stream;
   } catch (err) {
-    // Fallback sans contrainte facingMode
     console.warn('Contrainte facingMode échouée, fallback sans contrainte', err);
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: true,
       audio: false,
     });
-    state.useFrontCam = true; // on ne sait pas, supposer frontale
+    state.useFrontCam = true;
     DOM.camFeed.classList.remove('rear');
     return stream;
   }
@@ -100,7 +96,6 @@ async function requestCamera(wantRear) {
 async function flipCamera() {
   if (!state.stream) return;
 
-  // Arrêter tracker et flux actuels
   if (state.handTracker) {
     state.handTracker.stop();
     state.handTracker = null;
@@ -108,8 +103,8 @@ async function flipCamera() {
   state.stream.getTracks().forEach(t => t.stop());
   DOM.camFeed.srcObject = null;
 
-  // Inverser la caméra voulue
-  const wantRear = state.useFrontCam; // si on était en frontale → passer en arrière
+  // Inverser : si on était en frontale → arrière, et vice versa
+  const wantRear = state.useFrontCam;
 
   try {
     const stream = await requestCamera(wantRear);
@@ -117,12 +112,10 @@ async function flipCamera() {
     DOM.camFeed.srcObject = stream;
     await DOM.camFeed.play();
 
-    // Resynchroniser canvas debug
-    await new Promise(res => setTimeout(res, 300));
+    await delay(300);
     DOM.lmCanvas.width  = DOM.camFeed.videoWidth  || 640;
     DOM.lmCanvas.height = DOM.camFeed.videoHeight || 480;
 
-    // Relancer le tracker
     state.handTracker = new HandTracker(
       DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
     );
@@ -155,7 +148,6 @@ async function init() {
   setLoaderStep(0);
   await delay(200);
 
-  // 1. Three.js
   try {
     state.threeScene = new ThreeScene(DOM.threeCanvas);
   } catch (e) {
@@ -167,10 +159,9 @@ async function init() {
   await delay(300);
   setLoaderStep(2);
 
-  // 2. Caméra — demander la caméra arrière d'emblée
   let stream;
   try {
-    stream = await requestCamera(true); // true = arrière
+    stream = await requestCamera(true); // true = caméra arrière
     state.stream = stream;
   } catch (err) {
     console.warn('getUserMedia échoué :', err);
@@ -186,31 +177,27 @@ async function startWithStream(stream) {
   setLoaderStep(3);
   state.stream = stream;
 
-  DOM.camFeed.srcObject  = stream;
-  DOM.camFeed.muted      = true;
+  DOM.camFeed.srcObject   = stream;
+  DOM.camFeed.muted       = true;
   DOM.camFeed.playsInline = true;
 
-  // Attendre metadata
   await new Promise(res => {
     if (DOM.camFeed.readyState >= 1) { res(); return; }
     DOM.camFeed.onloadedmetadata = res;
   });
 
-  // Jouer la vidéo avant MediaPipe
   try {
     await DOM.camFeed.play();
   } catch (e) {
     console.warn('play() bloqué :', e);
   }
 
-  // Sync canvas debug
   DOM.lmCanvas.width  = DOM.camFeed.videoWidth  || 640;
   DOM.lmCanvas.height = DOM.camFeed.videoHeight || 480;
 
   setLoaderStep(4);
   await delay(400);
 
-  // 3. MediaPipe
   setStatus('scanning', 'Initialisation du suivi…');
   try {
     state.handTracker = new HandTracker(
