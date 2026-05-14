@@ -69,7 +69,7 @@ function setStatus(type, text) {
 async function requestCamera(preferRear = true) {
   const constraints = {
     video: {
-      facingMode: preferRear ? { ideal: 'environment' } : { ideal: 'user' },
+      facingMode: preferRear ? 'environment' : 'user',
       width:      { ideal: 1280 },
       height:     { ideal: 720 },
       frameRate:  { ideal: 30 },
