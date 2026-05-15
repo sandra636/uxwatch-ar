@@ -1,3 +1,4 @@
+
 'use strict';
 
 const state = {
@@ -42,120 +43,72 @@ const LOAD_STEPS = [
   { msg: 'Prêt !',                             pct: 100 },
 ];
 
-function setLoaderStep(index) {
-  const step = LOAD_STEPS[index];
-  if (!step) return;
-  DOM.loaderMsg.textContent  = step.msg;
-  DOM.loaderBar.style.width  = step.pct + '%';
+function setLoaderStep(i) {
+  const s = LOAD_STEPS[i];
+  if (!s) return;
+  DOM.loaderMsg.textContent = s.msg;
+  DOM.loaderBar.style.width = s.pct + '%';
 }
-
 function hideLoader() {
   DOM.loader.classList.add('fade-out');
   setTimeout(() => DOM.loader.classList.add('hidden'), 650);
 }
-
 function setStatus(type, text) {
   DOM.statusDot.className    = 'status-dot ' + (type || '');
   DOM.statusText.textContent = text;
 }
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-function delay(ms) {
-  return new Promise(res => setTimeout(res, ms));
-}
-
-/* ── Détecter les caméras disponibles ───────────────────────── */
+/* ── Détecter caméras ── */
 async function detectCameras() {
   try {
-    const tempStream = await navigator.mediaDevices.getUserMedia({
-      video: true, audio: false
-    });
-    tempStream.getTracks().forEach(t => t.stop());
-
+    const tmp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    tmp.getTracks().forEach(t => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
-    const cameras = devices.filter(d => d.kind === 'videoinput');
-
-    console.log('Caméras:', cameras.map(c => c.label));
-
-    const rear = cameras.find(c =>
-      /back|arrière|rear|environment|0,/i.test(c.label)
-    );
-    const front = cameras.find(c =>
-      /front|face|user|1,/i.test(c.label)
-    );
-
-    state.rearDeviceId  = rear  ? rear.deviceId  : (cameras[0]  ? cameras[0].deviceId  : null);
-    state.frontDeviceId = front ? front.deviceId : (cameras[1]  ? cameras[1].deviceId  : null);
-
-    console.log('Arrière:', state.rearDeviceId);
-    console.log('Frontale:', state.frontDeviceId);
-  } catch(e) {
-    console.warn('Détection caméras impossible:', e);
-  }
+    const cams    = devices.filter(d => d.kind === 'videoinput');
+    console.log('Caméras détectées:', cams.map(c => c.label));
+    const rear  = cams.find(c => /back|arrière|rear|environment/i.test(c.label));
+    const front = cams.find(c => /front|face|user/i.test(c.label));
+    state.rearDeviceId  = rear  ? rear.deviceId  : (cams[0] ? cams[0].deviceId  : null);
+    state.frontDeviceId = front ? front.deviceId : (cams[1] ? cams[1].deviceId  : null);
+  } catch(e) { console.warn('detectCameras:', e); }
 }
 
-/* ── Ouvrir une caméra ───────────────────────────────────────── */
+/* ── Ouvrir caméra ── */
 async function requestCamera(wantRear) {
   let stream;
-
-  // Méthode 1 : deviceId
   const deviceId = wantRear ? state.rearDeviceId : state.frontDeviceId;
+
   if (deviceId) {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: { exact: deviceId },
-          width:    { ideal: 1280 },
-          height:   { ideal: 720 },
-          frameRate:{ ideal: 30 },
-        },
+        video: { deviceId: { exact: deviceId }, width:{ideal:1280}, height:{ideal:720} },
         audio: false,
       });
       applyMirror(wantRear);
       state.useFrontCam = !wantRear;
       return stream;
-    } catch(e) {
-      console.warn('deviceId échoué, fallback facingMode:', e);
-    }
+    } catch(e) { console.warn('deviceId échoué:', e); }
   }
-
-  // Méthode 2 : facingMode exact
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { exact: wantRear ? 'environment' : 'user' },
-        width:    { ideal: 1280 },
-        height:   { ideal: 720 },
-      },
-      audio: false,
+      video: { facingMode: { exact: wantRear ? 'environment' : 'user' } }, audio: false,
     });
     applyMirror(wantRear);
     state.useFrontCam = !wantRear;
     return stream;
-  } catch(e) {
-    console.warn('facingMode exact échoué, fallback:', e);
-  }
+  } catch(e) { console.warn('facingMode exact échoué:', e); }
 
-  // Méthode 3 : facingMode souple
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: wantRear ? 'environment' : 'user',
-        width:    { ideal: 1280 },
-        height:   { ideal: 720 },
-      },
-      audio: false,
+      video: { facingMode: wantRear ? 'environment' : 'user' }, audio: false,
     });
     applyMirror(wantRear);
     state.useFrontCam = !wantRear;
     return stream;
-  } catch(e) {
-    console.warn('facingMode souple échoué, fallback ultime:', e);
-  }
+  } catch(e) { console.warn('facingMode souple échoué:', e); }
 
-  // Méthode 4 : fallback ultime sans contrainte
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: true, audio: false
-  });
+  stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
   state.useFrontCam = true;
   applyMirror(false);
   return stream;
@@ -171,49 +124,40 @@ function applyMirror(wantRear) {
   }
 }
 
-/* ── Flip caméra ─────────────────────────────────────────────── */
+/* ── Flip caméra ── */
 async function flipCamera() {
   if (!state.stream) return;
-
-  if (state.handTracker) {
-    state.handTracker.stop();
-    state.handTracker = null;
-  }
+  if (state.handTracker) { state.handTracker.stop(); state.handTracker = null; }
   state.stream.getTracks().forEach(t => t.stop());
   DOM.camFeed.srcObject = null;
-
-  const wantRear = state.useFrontCam; // inverser
-
+  const wantRear = state.useFrontCam;
   try {
     const stream = await requestCamera(wantRear);
     state.stream = stream;
     DOM.camFeed.srcObject = stream;
     await DOM.camFeed.play();
-
     await delay(300);
     DOM.lmCanvas.width  = DOM.camFeed.videoWidth  || 640;
     DOM.lmCanvas.height = DOM.camFeed.videoHeight || 480;
-
-    state.handTracker = new HandTracker(
-      DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
-    );
+    state.handTracker = new HandTracker(DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus);
     await state.handTracker.start(stream);
   } catch(err) {
-    console.error('Flip caméra impossible:', err);
+    console.error('Flip impossible:', err);
     setStatus('', 'Changement de caméra impossible');
   }
 }
 
-/* ── Sélection montre ────────────────────────────────────────── */
+/* ── Sélection montre ── */
 function selectWatch(index) {
   state.currentWatch = index;
   DOM.watchThumbs.forEach((btn, i) => btn.classList.toggle('active', i === index));
-  DOM.watchNameDisplay.textContent = WATCH_CATALOG[index].name;
+  if (DOM.watchNameDisplay) DOM.watchNameDisplay.textContent = WATCH_CATALOG[index].name;
   if (state.threeScene) state.threeScene.switchWatch(index);
 }
 
-/* ── Boucle AR ───────────────────────────────────────────────── */
+/* ── Boucle AR ── */
 function startARLoop() {
+  if (state.rafId) cancelAnimationFrame(state.rafId);
   function loop() {
     state.rafId = requestAnimationFrame(loop);
     if (state.threeScene) state.threeScene.render();
@@ -221,7 +165,7 @@ function startARLoop() {
   loop();
 }
 
-/* ── Init principale ─────────────────────────────────────────── */
+/* ── Init ── */
 async function init() {
   setLoaderStep(0);
   await delay(200);
@@ -229,20 +173,18 @@ async function init() {
   try {
     state.threeScene = new ThreeScene(DOM.threeCanvas);
   } catch(e) {
-    console.error('Erreur Three.js:', e);
-    showError('Erreur de chargement 3D. Rechargez la page.');
+    console.error('ThreeScene error:', e);
+    showError('Erreur moteur 3D. Rechargez.');
     return;
   }
 
   setLoaderStep(1);
   await delay(300);
   setLoaderStep(2);
-
   await detectCameras();
 
   let stream;
   try {
-    // TOUJOURS démarrer avec la caméra ARRIÈRE
     stream = await requestCamera(true);
     state.stream = stream;
   } catch(err) {
@@ -251,15 +193,13 @@ async function init() {
     DOM.permOverlay.classList.remove('hidden');
     return;
   }
-
   await startWithStream(stream);
 }
 
-/* ── Démarrer avec un stream ─────────────────────────────────── */
+/* ── Démarrer avec stream ── */
 async function startWithStream(stream) {
   setLoaderStep(3);
-  state.stream = stream;
-
+  state.stream            = stream;
   DOM.camFeed.srcObject   = stream;
   DOM.camFeed.muted       = true;
   DOM.camFeed.playsInline = true;
@@ -269,47 +209,44 @@ async function startWithStream(stream) {
     DOM.camFeed.onloadedmetadata = res;
     setTimeout(res, 3000);
   });
-
-  try {
-    await DOM.camFeed.play();
-  } catch(e) {
-    console.warn('play() bloqué:', e);
-  }
+  try { await DOM.camFeed.play(); } catch(e) { console.warn('play():', e); }
 
   DOM.lmCanvas.width  = DOM.camFeed.videoWidth  || 640;
   DOM.lmCanvas.height = DOM.camFeed.videoHeight || 480;
 
+  // IMPORTANT : resize Three.js APRÈS que l'app soit visible
   setLoaderStep(4);
   await delay(400);
-
   setStatus('scanning', 'Initialisation du suivi…');
 
   try {
-    state.handTracker = new HandTracker(
-      DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
-    );
+    state.handTracker = new HandTracker(DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus);
     await state.handTracker.start(stream);
   } catch(e) {
-    console.error('Erreur MediaPipe:', e);
+    console.error('MediaPipe error:', e);
     setStatus('', 'Erreur détection — rechargez');
   }
 
   setLoaderStep(5);
   await delay(400);
-
   hideLoader();
-  DOM.app.classList.remove('hidden');
-  startARLoop();
 
+  // Afficher l'app AVANT de démarrer la boucle AR
+  DOM.app.classList.remove('hidden');
+  await delay(200); // laisser le DOM se rendre
+
+  // Resize maintenant que l'app est visible
+  if (state.threeScene) state.threeScene.forceResize();
+
+  startARLoop();
   setStatus('scanning', 'Montrez votre main à la caméra…');
   DOM.scanReticle.classList.remove('hidden');
 }
 
-/* ── Callbacks MediaPipe ─────────────────────────────────────── */
+/* ── Callbacks ── */
 function onWristPose(pose) {
   if (state.threeScene) state.threeScene.updateWristPose(pose);
 }
-
 function onTrackingStatus(status) {
   if (status === 'detected') {
     setStatus('active', 'Main détectée ✓');
@@ -321,14 +258,13 @@ function onTrackingStatus(status) {
     DOM.detectedBadge.classList.add('hidden');
   }
 }
-
 function showError(msg) {
   hideLoader();
   DOM.errorMsg.textContent = msg;
   DOM.errorScreen.classList.remove('hidden');
 }
 
-/* ── Events ──────────────────────────────────────────────────── */
+/* ── Events ── */
 DOM.btnAllowCam.addEventListener('click', async () => {
   DOM.permOverlay.classList.add('hidden');
   try {
@@ -336,22 +272,22 @@ DOM.btnAllowCam.addEventListener('click', async () => {
     const stream = await requestCamera(true);
     await startWithStream(stream);
   } catch(err) {
-    showError('Accès caméra refusé. Autorisez dans les paramètres du navigateur.');
+    showError('Accès caméra refusé. Autorisez dans les paramètres.');
   }
 });
-
 DOM.btnFlip.addEventListener('click', flipCamera);
+DOM.watchThumbs.forEach((btn, i) => btn.addEventListener('click', () => selectWatch(i)));
 
-DOM.watchThumbs.forEach((btn, i) => {
-  btn.addEventListener('click', () => selectWatch(i));
-});
-
-/* ── Lancement ───────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     DOM.loader.classList.add('hidden');
-    showError('Votre navigateur ne supporte pas WebRTC. Utilisez Chrome récent.');
+    showError('Navigateur non supporté. Utilisez Chrome récent.');
     return;
   }
   init();
 });
+
+echo "app.js OK"
+Sortie
+
+app.js OK
