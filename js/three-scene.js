@@ -97,9 +97,12 @@ class ThreeScene {
           this.watches[i] = model;
 
           // Dès que la montre 0 est prête, l'activer immédiatement
-          if (i === 0) {
-            this.watchGroup = model;
-            console.log('✅ Montre 0 prête');
+        if (i === 0) {
+    this.watchGroup = model;
+    this.watchGroup.visible = true;
+    this.watchGroup.position.set(0, 0, 0);
+    this.watchGroup.scale.setScalar(1);
+    console.log('✅ Montre 0 prête et visible');
             // Si une pose était en attente, l'appliquer maintenant
             if (this.pendingPose) {
               this.updateWristPose(this.pendingPose);
