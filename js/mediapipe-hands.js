@@ -1,30 +1,19 @@
-/**
- * mediapipe-hands.js — VERSION CORRIGÉE
- * Corrections :
- *  - Seuils de confiance réduits pour une meilleure détection
- *  - Mirror X corrigé selon le type de caméra
- *  - Calcul de pose plus stable
- */
-
 'use strict';
 
 class HandTracker {
   constructor(videoEl, dbgCanvas, onPose, onStatus) {
-    this.video       = videoEl;
-    this.dbgCanvas   = dbgCanvas;
-    this.dbgCtx      = dbgCanvas ? dbgCanvas.getContext('2d') : null;
-    this.onPose      = onPose;
-    this.onStatus    = onStatus;
-
-    this.hands       = null;
-    this.camera      = null;
-    this.detected    = false;
-
-    this.smoothPos   = null;
-    this.smoothQuat  = null;
+    this.video     = videoEl;
+    this.dbgCanvas = dbgCanvas;
+    this.dbgCtx    = dbgCanvas ? dbgCanvas.getContext('2d') : null;
+    this.onPose    = onPose;
+    this.onStatus  = onStatus;
+    this.hands     = null;
+    this.rafId     = null;
+    this.detected  = false;
     this.framesSinceLost = 0;
-    this.LOST_THRESHOLD  = 10; // plus tolérant
-
+    this.LOST_THRESHOLD  = 10;
+    this.smoothPos  = null;
+    this.smoothQuat = null;
     this._init();
   }
 
@@ -36,16 +25,17 @@ class HandTracker {
 
     this.hands.setOptions({
       maxNumHands:            1,
-      modelComplexity:        0,   // CORRIGÉ : 0=lite, plus rapide et plus stable
-      minDetectionConfidence: 0.5, // CORRIGÉ : était 0.7, trop strict
-      minTrackingConfidence:  0.4, // CORRIGÉ : était 0.6, trop strict
+      modelComplexity:        0,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence:  0.4,
     });
 
     this.hands.onResults((results) => this._onResults(results));
   }
 
   async start(stream) {
-    // Ne pas ré-assigner srcObject si déjà défini par app.js
+    // NE PAS utiliser Camera de MediaPipe
+    // On utilise requestAnimationFrame pour envoyer les frames
     if (!this.video.srcObject) {
       this.video.srcObject = stream;
     }
@@ -53,22 +43,39 @@ class HandTracker {
       await this.video.play().catch(() => {});
     }
 
-    this.camera = new Camera(this.video, {
-      onFrame: async () => {
-        if (this.video.readyState >= 2) {
-          await this.hands.send({ image: this.video });
-        }
-      },
-      width:  640,
-      height: 480,
+    // Attendre que la vidéo soit prête
+    await new Promise(res => {
+      if (this.video.readyState >= 2) { res(); return; }
+      this.video.onloadeddata = res;
+      setTimeout(res, 2000);
     });
-    await this.camera.start();
+
+    // Boucle d'envoi des frames à MediaPipe
+    const sendFrame = async () => {
+      if (!this.rafId) return;
+      if (this.video.readyState >= 2 && !this.video.paused) {
+        try {
+          await this.hands.send({ image: this.video });
+        } catch(e) {
+          console.warn('hands.send error:', e);
+        }
+      }
+      this.rafId = requestAnimationFrame(sendFrame);
+    };
+
+    this.rafId = requestAnimationFrame(sendFrame);
+  }
+
+  stop() {
+    if (this.rafId) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+    if (this.hands) this.hands.close();
   }
 
   _onResults(results) {
-    if (this.dbgCtx) {
-      this._drawDebug(results);
-    }
+    if (this.dbgCtx) this._drawDebug(results);
 
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
       this.framesSinceLost++;
@@ -89,21 +96,18 @@ class HandTracker {
     }
 
     const landmarks = results.multiHandLandmarks[0];
-    const pose = this._computeWristPose(landmarks, results);
+    const pose = this._computeWristPose(landmarks);
     if (pose) this.onPose(pose);
   }
 
-  _computeWristPose(lm, results) {
-    const W  = lm[0];   // WRIST
-    const I  = lm[5];   // INDEX MCP
-    const P  = lm[17];  // PINKY MCP
-    const M  = lm[9];   // MIDDLE MCP
+  _computeWristPose(lm) {
+    const W = lm[0];
+    const I = lm[5];
+    const P = lm[17];
+    const M = lm[9];
 
-    // Détecter si caméra frontale (miroir) ou arrière
-    // MediaPipe retourne des coords non-mirrorées
-    // Pour caméra frontale : on doit inverser X
     const isFront = !document.getElementById('camera-feed').classList.contains('rear');
-    const mirrorX = isFront ? 1 : -1; // CORRIGÉ : miroir uniquement en frontal
+    const mirrorX = isFront ? 1 : -1;
 
     const toScene = (x, y, z) => {
       const aspect = (this.video.videoWidth || 640) / (this.video.videoHeight || 480);
@@ -124,38 +128,29 @@ class HandTracker {
     const pinkyV = toScene(P.x, P.y, P.z);
     const midV   = toScene(M.x, M.y, M.z);
 
-    // Axe Z : poignet → majeur MCP
     const zAxis = new THREE.Vector3().subVectors(midV, wristV).normalize();
-
-    // Axe X : auriculaire → index
     const xAxis = new THREE.Vector3().subVectors(indexV, pinkyV).normalize();
-
-    // Axe Y : produit croisé
     const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     const rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
     const quat   = new THREE.Quaternion().setFromRotationMatrix(rotMat);
 
-    // Rotation pour orienter la montre correctement sur le poignet
     const fixQuat = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0), Math.PI / 2
     );
     quat.multiply(fixQuat);
 
-    // Taille du poignet → échelle
     const wristWidth = new THREE.Vector3().subVectors(indexV, pinkyV).length();
     const targetScale = Math.max(0.3, Math.min(2.5, wristWidth * 3.2));
 
-    // Position : entre poignet et MCP milieu
     const midpoint = new THREE.Vector3()
       .addVectors(wristV, midV)
-      .multiplyScalar(0.45); // légèrement vers le poignet
-    // Décaler vers le bas (côté bracelet)
+      .multiplyScalar(0.45);
+
     const offset = new THREE.Vector3().copy(zAxis).multiplyScalar(-0.08 * targetScale);
     midpoint.add(offset);
 
-    // Lissage exponentiel
     if (!this.smoothPos) {
       this.smoothPos  = midpoint.clone();
       this.smoothQuat = quat.clone();
@@ -204,10 +199,5 @@ class HandTracker {
         ctx.fill();
       });
     });
-  }
-
-  stop() {
-    if (this.camera) this.camera.stop();
-    if (this.hands)  this.hands.close();
   }
 }
