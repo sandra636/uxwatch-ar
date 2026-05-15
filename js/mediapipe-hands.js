@@ -117,7 +117,7 @@ class HandTracker {
   new THREE.Vector3(1, 0, 0), Math.PI / 2
 );
 const corrY = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(0, 1, 0), Math.PI
+  new THREE.Vector3(0, 1, 0), -Math.PI / 2
 );
 quat.multiply(corrX);
 quat.multiply(corrY);
