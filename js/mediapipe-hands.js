@@ -22,55 +22,38 @@ class HandTracker {
       locateFile: (file) =>
         `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
-
     this.hands.setOptions({
       maxNumHands:            1,
       modelComplexity:        0,
       minDetectionConfidence: 0.5,
       minTrackingConfidence:  0.4,
     });
-
     this.hands.onResults((results) => this._onResults(results));
   }
 
   async start(stream) {
-    // NE PAS utiliser Camera de MediaPipe
-    // On utilise requestAnimationFrame pour envoyer les frames
-    if (!this.video.srcObject) {
-      this.video.srcObject = stream;
-    }
-    if (this.video.paused) {
-      await this.video.play().catch(() => {});
-    }
+    if (!this.video.srcObject) this.video.srcObject = stream;
+    if (this.video.paused) await this.video.play().catch(() => {});
 
-    // Attendre que la vidéo soit prête
     await new Promise(res => {
       if (this.video.readyState >= 2) { res(); return; }
       this.video.onloadeddata = res;
       setTimeout(res, 2000);
     });
 
-    // Boucle d'envoi des frames à MediaPipe
     const sendFrame = async () => {
       if (!this.rafId) return;
       if (this.video.readyState >= 2 && !this.video.paused) {
-        try {
-          await this.hands.send({ image: this.video });
-        } catch(e) {
-          console.warn('hands.send error:', e);
-        }
+        try { await this.hands.send({ image: this.video }); }
+        catch(e) { console.warn('hands.send error:', e); }
       }
       this.rafId = requestAnimationFrame(sendFrame);
     };
-
     this.rafId = requestAnimationFrame(sendFrame);
   }
 
   stop() {
-    if (this.rafId) {
-      cancelAnimationFrame(this.rafId);
-      this.rafId = null;
-    }
+    if (this.rafId) { cancelAnimationFrame(this.rafId); this.rafId = null; }
     if (this.hands) this.hands.close();
   }
 
@@ -79,12 +62,10 @@ class HandTracker {
 
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
       this.framesSinceLost++;
-      if (this.framesSinceLost >= this.LOST_THRESHOLD) {
-        if (this.detected) {
-          this.detected = false;
-          this.onPose(null);
-          this.onStatus('lost');
-        }
+      if (this.framesSinceLost >= this.LOST_THRESHOLD && this.detected) {
+        this.detected = false;
+        this.onPose(null);
+        this.onStatus('lost');
       }
       return;
     }
@@ -101,16 +82,18 @@ class HandTracker {
   }
 
   _computeWristPose(lm) {
-    const W = lm[0];
-    const I = lm[5];
-    const P = lm[17];
-    const M = lm[9];
+    const W = lm[0];   // poignet
+    const I = lm[5];   // index MCP
+    const P = lm[17];  // auriculaire MCP
+    const M = lm[9];   // majeur MCP
 
-    const isFront = !document.getElementById('camera-feed').classList.contains('rear');
-    const mirrorX = isFront ? 1 : -1;
+    // Caméra arrière = pas de miroir, caméra avant = miroir X
+    const isRear   = document.getElementById('camera-feed').classList.contains('rear');
+    const mirrorX  = isRear ? -1 : 1;  // CORRIGÉ : arrière = -1 pour compenser
 
     const toScene = (x, y, z) => {
-      const aspect = (this.video.videoWidth || 640) / (this.video.videoHeight || 480);
+      const aspect = (this.video.videoWidth  || 640) /
+                     (this.video.videoHeight || 480);
       const fov    = 45 * Math.PI / 180;
       const dist   = 5;
       const scaleY = 2 * dist * Math.tan(fov / 2);
@@ -128,6 +111,7 @@ class HandTracker {
     const pinkyV = toScene(P.x, P.y, P.z);
     const midV   = toScene(M.x, M.y, M.z);
 
+    // Calcul rotation
     const zAxis = new THREE.Vector3().subVectors(midV, wristV).normalize();
     const xAxis = new THREE.Vector3().subVectors(indexV, pinkyV).normalize();
     const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
@@ -135,22 +119,25 @@ class HandTracker {
 
     const rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
     const quat   = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-
-    const fixQuat = new THREE.Quaternion().setFromAxisAngle(
+    const fixQ   = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0), Math.PI / 2
     );
-    quat.multiply(fixQuat);
+    quat.multiply(fixQ);
 
+    // Taille proportionnelle à la largeur du poignet
     const wristWidth = new THREE.Vector3().subVectors(indexV, pinkyV).length();
     const targetScale = Math.max(0.3, Math.min(2.5, wristWidth * 3.2));
 
+    // CORRIGÉ : position = moyenne poignet + milieu MCP (pas 0.45 !)
     const midpoint = new THREE.Vector3()
       .addVectors(wristV, midV)
-      .multiplyScalar(0.45);
+      .multiplyScalar(0.5);  // ← CORRIGÉ : 0.5 au lieu de 0.45
 
-    const offset = new THREE.Vector3().copy(zAxis).multiplyScalar(-0.08 * targetScale);
+    // Petit offset vers l'avant
+    const offset = new THREE.Vector3().copy(zAxis).multiplyScalar(0.05 * targetScale);
     midpoint.add(offset);
 
+    // Lissage
     if (!this.smoothPos) {
       this.smoothPos  = midpoint.clone();
       this.smoothQuat = quat.clone();
@@ -171,7 +158,6 @@ class HandTracker {
     const W   = this.dbgCanvas.width;
     const H   = this.dbgCanvas.height;
     ctx.clearRect(0, 0, W, H);
-
     if (!results.multiHandLandmarks) return;
 
     results.multiHandLandmarks.forEach(lm => {
@@ -191,7 +177,6 @@ class HandTracker {
         ctx.lineTo(lm[b].x * W, lm[b].y * H);
         ctx.stroke();
       });
-
       lm.forEach((p, i) => {
         ctx.beginPath();
         ctx.arc(p.x * W, p.y * H, i === 0 ? 6 : 3, 0, Math.PI * 2);
