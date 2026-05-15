@@ -5,7 +5,8 @@ class ThreeScene {
     this.canvas = canvasEl;
     this.width = 0; this.height = 0;
     this.renderer = null; this.scene = null; this.camera = null;
-    this.watches = []; this.currentWatch = 0; this.watchGroup = null;
+    this.watches = [null, null, null];
+    this.currentWatch = 0; this.watchGroup = null;
     this.targetPos = new THREE.Vector3();
     this.targetQuat = new THREE.Quaternion();
     this.currentPos = new THREE.Vector3();
@@ -50,7 +51,6 @@ class ThreeScene {
     bot.position.set(0, -3, 2); this.scene.add(bot);
   }
 
-  // ✅ Appelé par app.js après que le DOM soit visible
   forceResize() {
     this._onResize();
     console.log('forceResize: ' + this.width + 'x' + this.height);
@@ -69,9 +69,9 @@ class ThreeScene {
     this.camera.updateProjectionMatrix();
   }
 
-  _loadAllWatches() {
-    const loader = new THREE.GLTFLoader();
-    WATCH_CATALOG.forEach((def, i) => {
+  _loadModel(def, i) {
+    return new Promise((resolve, reject) => {
+      const loader = new THREE.GLTFLoader();
       console.log('Chargement: ' + def.path);
       loader.load(
         def.path,
@@ -97,41 +97,69 @@ class ThreeScene {
           this.scene.add(model);
           this.watches[i] = model;
           this.loadedCount++;
-          if (i === 0) {
-            this.watchGroup = model;
-            console.log('✅ watch1.glb chargée');
-          } else {
-            console.log('✅ Montre ' + (i+1) + ' chargée');
-          }
           if (gltf.animations && gltf.animations.length > 0) {
             const mixer = new THREE.AnimationMixer(model);
             gltf.animations.forEach(clip => mixer.clipAction(clip).play());
             this.mixers[i] = mixer;
           }
+          console.log('✅ Montre ' + (i+1) + ' chargée (' + this.loadedCount + '/3)');
+          resolve(model);
         },
         null,
         (err) => {
-          console.error('❌ Erreur GLB ' + i + ' (' + def.path + '):', err);
+          console.error('❌ Erreur GLB ' + (i+1) + ':', err);
+          reject(err);
         }
       );
     });
   }
 
+  _loadAllWatches() {
+    // Charger les 3 montres en parallèle
+    Promise.all(
+      WATCH_CATALOG.map((def, i) => this._loadModel(def, i))
+    ).then(() => {
+      console.log('✅ Toutes les montres chargées !');
+      // Activer la première montre par défaut
+      this.watches[0].visible = false;
+      this.watchGroup = this.watches[0];
+      // Débloquer les boutons
+      document.querySelectorAll('.watch-thumb').forEach(btn => {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+      });
+    }).catch(err => {
+      console.error('Erreur chargement montres:', err);
+    });
+
+    // Désactiver les boutons pendant le chargement
+    document.querySelectorAll('.watch-thumb').forEach((btn, i) => {
+      if (i !== 0) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+      }
+    });
+  }
+
   switchWatch(index) {
-    this.watches.forEach(w => { if (w) w.visible = false; });
+    console.log('Switch vers montre ' + index);
+
+    // Cacher toutes
+    this.watches.forEach((w, i) => {
+      if (w) {
+        w.visible = false;
+        console.log('Montre ' + i + ' cachée');
+      }
+    });
+
     this.currentWatch = index;
+
     if (this.watches[index]) {
       this.watchGroup = this.watches[index];
       this.watchGroup.visible = this.watchVisible;
+      console.log('Montre ' + index + ' activée, visible=' + this.watchVisible);
     } else {
-      const iv = setInterval(() => {
-        if (this.watches[index]) {
-          this.watches.forEach(w => { if (w) w.visible = false; });
-          this.watchGroup = this.watches[index];
-          this.watchGroup.visible = this.watchVisible;
-          clearInterval(iv);
-        }
-      }, 100);
+      console.warn('Montre ' + index + ' pas encore chargée');
     }
   }
 
@@ -148,7 +176,6 @@ class ThreeScene {
   }
 
   render() {
-    // Resize si taille 0
     if (this.width === 0 || this.height === 0) this._onResize();
 
     const delta = this.clock.getDelta();
