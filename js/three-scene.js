@@ -51,7 +51,7 @@ class ThreeScene {
       new THREE.SphereGeometry(0.2, 16, 16),
       new THREE.MeshStandardMaterial({ color: '#ff0000' })
     );
-    sphere.visible = false;
+    sphere.visible = true;
     this.scene.add(sphere);
     this.debugSphere = sphere;
 
@@ -127,7 +127,7 @@ class ThreeScene {
               child.material.needsUpdate = true;
             }
           });
-          model.visible = false;
+          model.visible = true;
           this.scene.add(model);
           this.watches[i] = model;
           if (gltf.animations && gltf.animations.length > 0) {
