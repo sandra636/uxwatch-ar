@@ -29,11 +29,9 @@ class ThreeScene {
     this.renderer.outputEncoding = THREE.sRGBEncoding;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.6;
-
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
     this.camera.position.set(0, 0, 5);
-
     this._setupLights();
     this._loadAllWatches();
     window.addEventListener('resize', () => this._onResize(), { passive: true });
@@ -92,7 +90,9 @@ class ThreeScene {
           this.watches[i] = model;
           if (i === 0) {
             this.watchGroup = model;
-            console.log('✅ Montre 0 prête');
+            console.log('✅ Montre ' + i + ' prête');
+          } else {
+            console.log('✅ Montre ' + i + ' prête');
           }
         },
         null,
@@ -111,6 +111,8 @@ class ThreeScene {
     } else {
       const iv = setInterval(() => {
         if (this.watches[index]) {
+          if (this.watches[this.currentWatch])
+            this.watches[this.currentWatch].visible = false;
           this.watchGroup = this.watches[index];
           this.watchGroup.visible = this.watchVisible;
           clearInterval(iv);
@@ -133,7 +135,6 @@ class ThreeScene {
 
   render() {
     if (this.width === 0 || this.height === 0) this._onResize();
-
     if (this.watchGroup && this.watchVisible) {
       this.currentPos.lerp(this.targetPos, this.smoothAlpha);
       this.currentQuat.slerp(this.targetQuat, this.smoothAlpha * 0.85);
@@ -145,9 +146,7 @@ class ThreeScene {
     } else if (this.watchGroup) {
       this.watchGroup.visible = false;
     }
-
     this.renderer.render(this.scene, this.camera);
-
     this.frameCount++;
     const now = performance.now();
     if (now - this.lastFpsTime >= 1000) {
