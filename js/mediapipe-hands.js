@@ -19,8 +19,7 @@ class HandTracker {
 
   async _init() {
     this.hands = new Hands({
-      locateFile: (file) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+      locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`,
     });
     this.hands.setOptions({
       maxNumHands: 1,
@@ -28,7 +27,7 @@ class HandTracker {
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.4,
     });
-    this.hands.onResults((results) => this._onResults(results));
+    this.hands.onResults((r) => this._onResults(r));
   }
 
   async start(stream) {
@@ -39,15 +38,14 @@ class HandTracker {
       this.video.onloadeddata = res;
       setTimeout(res, 2000);
     });
-    const sendFrame = async () => {
+    const send = async () => {
       if (!this.rafId) return;
       if (this.video.readyState >= 2 && !this.video.paused) {
-        try { await this.hands.send({ image: this.video }); }
-        catch(e) {}
+        try { await this.hands.send({ image: this.video }); } catch(e) {}
       }
-      this.rafId = requestAnimationFrame(sendFrame);
+      this.rafId = requestAnimationFrame(send);
     };
-    this.rafId = requestAnimationFrame(sendFrame);
+    this.rafId = requestAnimationFrame(send);
   }
 
   stop() {
@@ -56,7 +54,7 @@ class HandTracker {
   }
 
   _onResults(results) {
-    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    if (!results.multiHandLandmarks || !results.multiHandLandmarks.length) {
       this.framesSinceLost++;
       if (this.framesSinceLost >= this.LOST_THRESHOLD && this.detected) {
         this.detected = false;
@@ -66,79 +64,85 @@ class HandTracker {
       return;
     }
     this.framesSinceLost = 0;
-    if (!this.detected) {
-      this.detected = true;
-      this.onStatus('detected');
-    }
+    if (!this.detected) { this.detected = true; this.onStatus('detected'); }
     const pose = this._computeWristPose(results.multiHandLandmarks[0]);
     if (pose) this.onPose(pose);
   }
 
   _computeWristPose(lm) {
-    const W = lm[0];
-    const I = lm[5];
-    const P = lm[17];
-    const M = lm[9];
+    // Points clés
+    const W  = lm[0];   // poignet
+    const I  = lm[5];   // index MCP
+    const P  = lm[17];  // auriculaire MCP
+    const M  = lm[9];   // majeur MCP
+    const W2 = lm[1];   // poignet bas (thumb CMC)
 
     const isRear = document.getElementById('camera-feed').classList.contains('rear');
-    const mirrorX = isRear ? -1 : 1;
+    const mx = isRear ? -1 : 1;
 
     const vW = this.video.videoWidth  || 640;
     const vH = this.video.videoHeight || 480;
     const aspect = vW / vH;
-
-    const fov  = 45 * Math.PI / 180;
-    const dist = 5;
-    const scaleY = 2 * dist * Math.tan(fov / 2);
+    const scaleY = 2 * 5 * Math.tan(22.5 * Math.PI / 180);
     const scaleX = scaleY * aspect;
 
-    const toScene = (x, y, z) => new THREE.Vector3(
-      (0.5 - x) * scaleX * mirrorX,
+    const ts = (x, y, z) => new THREE.Vector3(
+      (0.5 - x) * scaleX * mx,
       (0.5 - y) * scaleY,
-      -z * 1.5
+      z * -1.5
     );
 
-    const wristV = toScene(W.x, W.y, W.z);
-    const indexV = toScene(I.x, I.y, I.z);
-    const pinkyV = toScene(P.x, P.y, P.z);
-    const midV   = toScene(M.x, M.y, M.z);
+    const wV = ts(W.x,  W.y,  W.z);
+    const iV = ts(I.x,  I.y,  I.z);
+    const pV = ts(P.x,  P.y,  P.z);
+    const mV = ts(M.x,  M.y,  M.z);
 
-    const zAxis = new THREE.Vector3().subVectors(midV, wristV).normalize();
-    const xAxis = new THREE.Vector3().subVectors(indexV, pinkyV).normalize();
-    const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
-    xAxis.crossVectors(yAxis, zAxis).normalize();
+    // Axe principal : direction de l'avant-bras (poignet → MCP majeur)
+    // C'est l'axe Y de la montre (vers le haut du cadran)
+    const axisY = new THREE.Vector3().subVectors(mV, wV).normalize();
 
-    const rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
-    const quat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-   const fixQ1 = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(1, 0, 0), Math.PI / 2
+    // Axe transversal : auriculaire → index (largeur de la main)
+    // C'est l'axe X de la montre
+    const axisX = new THREE.Vector3().subVectors(iV, pV).normalize();
+
+    // Axe normal : perpendiculaire au plan de la main
+    // C'est l'axe Z de la montre (face du cadran)
+    const axisZ = new THREE.Vector3().crossVectors(axisX, axisY).normalize();
+
+    // Recalculer X orthogonal
+    axisX.crossVectors(axisY, axisZ).normalize();
+
+    // Construire la matrice de rotation
+    const mat = new THREE.Matrix4().makeBasis(axisX, axisY, axisZ);
+    const quat = new THREE.Quaternion().setFromRotationMatrix(mat);
+
+    // La montre doit être à plat sur le poignet
+    // Rotation de 90° pour que le cadran soit face à la caméra
+    const r1 = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0), -Math.PI / 2
     );
-const fixQ2 = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 0, 1), Math.PI / 2
-    );
-quat.multiply(fixQ1);
-quat.multiply(fixQ2);
+    quat.multiply(r1);
 
-    // Taille basée sur la largeur réelle du poignet dans l'image
-    const wristWidth = new THREE.Vector3().subVectors(indexV, pinkyV).length();
-    // Grande échelle pour que la montre soit visible et réaliste
-    const targetScale = Math.max(2.5, Math.min(8.0, wristWidth * 12.0));
+    // Taille proportionnelle à la largeur de la main
+    const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
+    const scale = Math.max(2.0, Math.min(7.0, wristWidth * 10.0));
 
-    // Position exacte sur le poignet (entre wrist et MCP)
-   const position = new THREE.Vector3().lerpVectors(wristV, midV, 0.25);
+    // Position : juste au dessus du poignet (20% vers les MCP)
+    const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.20);
 
+    // Lissage
     if (!this.smoothPos) {
-      this.smoothPos  = position.clone();
+      this.smoothPos  = pos.clone();
       this.smoothQuat = quat.clone();
     } else {
-      this.smoothPos.lerp(position, 0.4);
-      this.smoothQuat.slerp(quat, 0.35);
+      this.smoothPos.lerp(pos, 0.35);
+      this.smoothQuat.slerp(quat, 0.3);
     }
 
     return {
       position:   this.smoothPos.clone(),
       quaternion: this.smoothQuat.clone(),
-      scale:      targetScale,
+      scale,
     };
   }
 }
