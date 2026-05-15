@@ -45,7 +45,7 @@ async function requestCamera() {
   for (const c of tries) {
     try {
       const s = await navigator.mediaDevices.getUserMedia({ ...c, audio: false });
-      const isRear = c.video.facingMode !== undefined;
+      const isRear = !!c.video.facingMode;
       DOM.camFeed.classList.toggle('rear', isRear);
       DOM.camFeed.style.transform = isRear ? 'none' : 'scaleX(-1)';
       state.useFrontCam = !isRear;
@@ -138,8 +138,11 @@ async function startWithStream(stream) {
   await delay(400);
   hideLoader();
 
+  // ✅ Afficher l'app AVANT le resize
   DOM.app.classList.remove('hidden');
-  await delay(150);
+  await delay(200);
+
+  // ✅ Resize maintenant que le viewport est visible
   if (state.threeScene) state.threeScene.forceResize();
 
   startARLoop();
@@ -153,7 +156,7 @@ async function init() {
 
   try {
     state.threeScene = new ThreeScene(DOM.threeCanvas);
-    setLoader('Modèles chargés…', 40);
+    setLoader('Moteur 3D prêt…', 40);
   } catch(e) {
     showError('Erreur moteur 3D : ' + e.message);
     return;
