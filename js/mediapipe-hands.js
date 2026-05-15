@@ -113,17 +113,24 @@ class HandTracker {
     const quat = new THREE.Quaternion().setFromRotationMatrix(mat);
 
     // Correction : allonger la montre dans l'axe du bras
-    const corrX = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(1, 0, 0), Math.PI / 2
-    );
-    quat.multiply(corrX);
+   const corrX = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(1, 0, 0), Math.PI / 2
+);
+const corrY = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(0, 1, 0), Math.PI
+);
+quat.multiply(corrX);
+quat.multiply(corrY);
 
     // Taille
     const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
    const scale = Math.max(1.0, Math.min(3.5, wristWidth * 6.0));
 
     // Position : sur le poignet (très proche du point 0)
-   const pos = wV.clone();
+  // Décaler la montre vers le bas du poignet (vers l'avant-bras)
+const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.15);
+const downOffset = normal.clone().multiplyScalar(-0.05);
+pos.add(downOffset);
 
     if (!this.smoothPos) {
       this.smoothPos  = pos.clone();
