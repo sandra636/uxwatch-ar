@@ -1,8 +1,3 @@
-/**
- * app.js — VERSION v5
- * Fix camera arriere : utilise deviceId pour forcer la caméra arrière
- */
-
 'use strict';
 
 const state = {
@@ -16,42 +11,42 @@ const state = {
   rafId:        null,
 };
 
-const $  = id => document.getElementById(id);
+const $ = id => document.getElementById(id);
 const DOM = {
-  loader:        $('loader'),
-  loaderMsg:     $('loader-msg'),
-  loaderBar:     $('loader-bar-fill'),
-  permOverlay:   $('permission-overlay'),
-  btnAllowCam:   $('btn-allow-cam'),
-  app:           $('app'),
-  errorScreen:   $('error-screen'),
-  errorMsg:      $('error-msg'),
-  camFeed:       $('camera-feed'),
-  threeCanvas:   $('three-canvas'),
-  lmCanvas:      $('landmark-canvas'),
-  statusDot:     $('status-dot'),
-  statusText:    $('status-text'),
-  scanReticle:   $('scan-reticle'),
-  detectedBadge: $('detected-badge'),
-  btnFlip:       $('btn-flip'),
-  watchThumbs:   document.querySelectorAll('.watch-thumb'),
+  loader:           $('loader'),
+  loaderMsg:        $('loader-msg'),
+  loaderBar:        $('loader-bar-fill'),
+  permOverlay:      $('permission-overlay'),
+  btnAllowCam:      $('btn-allow-cam'),
+  app:              $('app'),
+  errorScreen:      $('error-screen'),
+  errorMsg:         $('error-msg'),
+  camFeed:          $('camera-feed'),
+  threeCanvas:      $('three-canvas'),
+  lmCanvas:         $('landmark-canvas'),
+  statusDot:        $('status-dot'),
+  statusText:       $('status-text'),
+  scanReticle:      $('scan-reticle'),
+  detectedBadge:    $('detected-badge'),
+  btnFlip:          $('btn-flip'),
+  watchThumbs:      document.querySelectorAll('.watch-thumb'),
   watchNameDisplay: $('watch-name-display'),
 };
 
 const LOAD_STEPS = [
-  { msg: 'Initialisation du moteur 3D…',       pct: 15 },
-  { msg: 'Chargement des modèles de montres…',  pct: 35 },
-  { msg: 'Activation de MediaPipe Hands…',      pct: 55 },
-  { msg: 'Connexion à la caméra…',              pct: 75 },
-  { msg: 'Calibration AR…',                     pct: 90 },
-  { msg: 'Prêt !',                              pct: 100 },
+  { msg: 'Initialisation du moteur 3D…',      pct: 15 },
+  { msg: 'Chargement des modèles de montres…', pct: 35 },
+  { msg: 'Activation de MediaPipe Hands…',     pct: 55 },
+  { msg: 'Connexion à la caméra…',             pct: 75 },
+  { msg: 'Calibration AR…',                    pct: 90 },
+  { msg: 'Prêt !',                             pct: 100 },
 ];
 
 function setLoaderStep(index) {
   const step = LOAD_STEPS[index];
   if (!step) return;
-  DOM.loaderMsg.textContent = step.msg;
-  DOM.loaderBar.style.width = step.pct + '%';
+  DOM.loaderMsg.textContent  = step.msg;
+  DOM.loaderBar.style.width  = step.pct + '%';
 }
 
 function hideLoader() {
@@ -64,95 +59,115 @@ function setStatus(type, text) {
   DOM.statusText.textContent = text;
 }
 
+function delay(ms) {
+  return new Promise(res => setTimeout(res, ms));
+}
+
 /* ── Détecter les caméras disponibles ───────────────────────── */
 async function detectCameras() {
   try {
-    // Il faut d'abord obtenir une permission pour avoir les labels
-    const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const tempStream = await navigator.mediaDevices.getUserMedia({
+      video: true, audio: false
+    });
     tempStream.getTracks().forEach(t => t.stop());
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     const cameras = devices.filter(d => d.kind === 'videoinput');
 
-    console.log('Caméras trouvées:', cameras.map(c => c.label + ' | ' + c.deviceId));
+    console.log('Caméras:', cameras.map(c => c.label));
 
-    // Chercher caméra arrière par le label
     const rear = cameras.find(c =>
-      c.label.toLowerCase().includes('back') ||
-      c.label.toLowerCase().includes('arrière') ||
-      c.label.toLowerCase().includes('rear') ||
-      c.label.toLowerCase().includes('environment') ||
-      c.label.toLowerCase().includes('0,') // Android: "camera2 0, facing back"
+      /back|arrière|rear|environment|0,/i.test(c.label)
     );
-
     const front = cameras.find(c =>
-      c.label.toLowerCase().includes('front') ||
-      c.label.toLowerCase().includes('face') ||
-      c.label.toLowerCase().includes('user') ||
-      c.label.toLowerCase().includes('1,') // Android: "camera2 1, facing front"
+      /front|face|user|1,/i.test(c.label)
     );
 
-    // Si pas trouvé par label, prendre la première comme arrière
     state.rearDeviceId  = rear  ? rear.deviceId  : (cameras[0]  ? cameras[0].deviceId  : null);
     state.frontDeviceId = front ? front.deviceId : (cameras[1]  ? cameras[1].deviceId  : null);
 
-    console.log('Caméra arrière deviceId:', state.rearDeviceId);
-    console.log('Caméra frontale deviceId:', state.frontDeviceId);
+    console.log('Arrière:', state.rearDeviceId);
+    console.log('Frontale:', state.frontDeviceId);
   } catch(e) {
-    console.warn('Impossible de détecter les caméras:', e);
+    console.warn('Détection caméras impossible:', e);
   }
 }
 
 /* ── Ouvrir une caméra ───────────────────────────────────────── */
 async function requestCamera(wantRear) {
-  let constraints;
+  let stream;
 
-  // Méthode 1 : utiliser deviceId si disponible
+  // Méthode 1 : deviceId
   const deviceId = wantRear ? state.rearDeviceId : state.frontDeviceId;
-
   if (deviceId) {
-    constraints = {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: deviceId },
+          width:    { ideal: 1280 },
+          height:   { ideal: 720 },
+          frameRate:{ ideal: 30 },
+        },
+        audio: false,
+      });
+      applyMirror(wantRear);
+      state.useFrontCam = !wantRear;
+      return stream;
+    } catch(e) {
+      console.warn('deviceId échoué, fallback facingMode:', e);
+    }
+  }
+
+  // Méthode 2 : facingMode exact
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        deviceId: { exact: deviceId },
+        facingMode: { exact: wantRear ? 'environment' : 'user' },
         width:    { ideal: 1280 },
         height:   { ideal: 720 },
-        frameRate:{ ideal: 30 },
       },
       audio: false,
-    };
-  } else {
-    // Méthode 2 : fallback avec facingMode
-    constraints = {
+    });
+    applyMirror(wantRear);
+    state.useFrontCam = !wantRear;
+    return stream;
+  } catch(e) {
+    console.warn('facingMode exact échoué, fallback:', e);
+  }
+
+  // Méthode 3 : facingMode souple
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: wantRear ? 'environment' : 'user',
         width:    { ideal: 1280 },
         height:   { ideal: 720 },
-        frameRate:{ ideal: 30 },
       },
       audio: false,
-    };
+    });
+    applyMirror(wantRear);
+    state.useFrontCam = !wantRear;
+    return stream;
+  } catch(e) {
+    console.warn('facingMode souple échoué, fallback ultime:', e);
   }
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia(constraints);
-    state.useFrontCam = !wantRear;
-    // Appliquer miroir uniquement pour caméra frontale
-    if (wantRear) {
-      DOM.camFeed.classList.add('rear');
-      DOM.camFeed.style.transform = 'none';
-    } else {
-      DOM.camFeed.classList.remove('rear');
-      DOM.camFeed.style.transform = 'scaleX(-1)';
-    }
-    return stream;
-  } catch (err) {
-    console.warn('Erreur caméra avec deviceId, fallback facingMode:', err);
-    // Fallback ultime sans contrainte
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    state.useFrontCam = true;
+  // Méthode 4 : fallback ultime sans contrainte
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: true, audio: false
+  });
+  state.useFrontCam = true;
+  applyMirror(false);
+  return stream;
+}
+
+function applyMirror(wantRear) {
+  if (wantRear) {
+    DOM.camFeed.classList.add('rear');
+    DOM.camFeed.style.transform = 'none';
+  } else {
     DOM.camFeed.classList.remove('rear');
     DOM.camFeed.style.transform = 'scaleX(-1)';
-    return stream;
   }
 }
 
@@ -183,8 +198,8 @@ async function flipCamera() {
       DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
     );
     await state.handTracker.start(stream);
-  } catch (err) {
-    console.error('Impossible de changer de caméra:', err);
+  } catch(err) {
+    console.error('Flip caméra impossible:', err);
     setStatus('', 'Changement de caméra impossible');
   }
 }
@@ -213,24 +228,24 @@ async function init() {
 
   try {
     state.threeScene = new ThreeScene(DOM.threeCanvas);
-  } catch (e) {
+  } catch(e) {
     console.error('Erreur Three.js:', e);
     showError('Erreur de chargement 3D. Rechargez la page.');
     return;
   }
+
   setLoaderStep(1);
   await delay(300);
   setLoaderStep(2);
 
-  // Détecter les caméras disponibles
   await detectCameras();
 
-  // Demander la caméra arrière
   let stream;
   try {
+    // TOUJOURS démarrer avec la caméra ARRIÈRE
     stream = await requestCamera(true);
     state.stream = stream;
-  } catch (err) {
+  } catch(err) {
     console.warn('getUserMedia échoué:', err);
     hideLoader();
     DOM.permOverlay.classList.remove('hidden');
@@ -240,6 +255,7 @@ async function init() {
   await startWithStream(stream);
 }
 
+/* ── Démarrer avec un stream ─────────────────────────────────── */
 async function startWithStream(stream) {
   setLoaderStep(3);
   state.stream = stream;
@@ -251,11 +267,12 @@ async function startWithStream(stream) {
   await new Promise(res => {
     if (DOM.camFeed.readyState >= 1) { res(); return; }
     DOM.camFeed.onloadedmetadata = res;
+    setTimeout(res, 3000);
   });
 
   try {
     await DOM.camFeed.play();
-  } catch (e) {
+  } catch(e) {
     console.warn('play() bloqué:', e);
   }
 
@@ -266,12 +283,13 @@ async function startWithStream(stream) {
   await delay(400);
 
   setStatus('scanning', 'Initialisation du suivi…');
+
   try {
     state.handTracker = new HandTracker(
       DOM.camFeed, DOM.lmCanvas, onWristPose, onTrackingStatus
     );
     await state.handTracker.start(stream);
-  } catch (e) {
+  } catch(e) {
     console.error('Erreur MediaPipe:', e);
     setStatus('', 'Erreur détection — rechargez');
   }
@@ -317,7 +335,7 @@ DOM.btnAllowCam.addEventListener('click', async () => {
     await detectCameras();
     const stream = await requestCamera(true);
     await startWithStream(stream);
-  } catch (err) {
+  } catch(err) {
     showError('Accès caméra refusé. Autorisez dans les paramètres du navigateur.');
   }
 });
@@ -327,11 +345,6 @@ DOM.btnFlip.addEventListener('click', flipCamera);
 DOM.watchThumbs.forEach((btn, i) => {
   btn.addEventListener('click', () => selectWatch(i));
 });
-
-/* ── Helpers ─────────────────────────────────────────────────── */
-function delay(ms) {
-  return new Promise(res => setTimeout(res, ms));
-}
 
 /* ── Lancement ───────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
