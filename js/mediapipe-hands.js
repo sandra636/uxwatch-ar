@@ -70,12 +70,10 @@ class HandTracker {
   }
 
   _computeWristPose(lm) {
-    // Points clés
-    const W  = lm[0];   // poignet
-    const I  = lm[5];   // index MCP
-    const P  = lm[17];  // auriculaire MCP
-    const M  = lm[9];   // majeur MCP
-    const W2 = lm[1];   // poignet bas (thumb CMC)
+    const W = lm[0];   // poignet
+    const I = lm[5];   // index MCP
+    const P = lm[17];  // auriculaire MCP
+    const M = lm[9];   // majeur MCP
 
     const isRear = document.getElementById('camera-feed').classList.contains('rear');
     const mx = isRear ? -1 : 1;
@@ -92,45 +90,41 @@ class HandTracker {
       z * -1.5
     );
 
-    const wV = ts(W.x,  W.y,  W.z);
-    const iV = ts(I.x,  I.y,  I.z);
-    const pV = ts(P.x,  P.y,  P.z);
-    const mV = ts(M.x,  M.y,  M.z);
+    const wV = ts(W.x, W.y, W.z);
+    const iV = ts(I.x, I.y, I.z);
+    const pV = ts(P.x, P.y, P.z);
+    const mV = ts(M.x, M.y, M.z);
 
-    // Axe principal : direction de l'avant-bras (poignet → MCP majeur)
-    // C'est l'axe Y de la montre (vers le haut du cadran)
-    const axisY = new THREE.Vector3().subVectors(mV, wV).normalize();
+    // Direction avant-bras : poignet → MCP majeur
+    const forearm = new THREE.Vector3().subVectors(mV, wV).normalize();
 
-    // Axe transversal : auriculaire → index (largeur de la main)
-    // C'est l'axe X de la montre
-    const axisX = new THREE.Vector3().subVectors(iV, pV).normalize();
+    // Direction largeur main : auriculaire → index
+    const handWidth = new THREE.Vector3().subVectors(iV, pV).normalize();
 
-    // Axe normal : perpendiculaire au plan de la main
-    // C'est l'axe Z de la montre (face du cadran)
-    const axisZ = new THREE.Vector3().crossVectors(axisX, axisY).normalize();
+    // Normale au plan de la main
+    const normal = new THREE.Vector3().crossVectors(handWidth, forearm).normalize();
 
-    // Recalculer X orthogonal
-    axisX.crossVectors(axisY, axisZ).normalize();
+    // Base orthonormale propre
+    const axisX = handWidth.clone();
+    const axisZ = forearm.clone();
+    const axisY = new THREE.Vector3().crossVectors(axisZ, axisX).normalize();
 
-    // Construire la matrice de rotation
     const mat = new THREE.Matrix4().makeBasis(axisX, axisY, axisZ);
     const quat = new THREE.Quaternion().setFromRotationMatrix(mat);
 
-    // La montre doit être à plat sur le poignet
-    // Rotation de 90° pour que le cadran soit face à la caméra
-    const r1 = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(1, 0, 0), -Math.PI / 2
+    // Correction : allonger la montre dans l'axe du bras
+    const corrX = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0), Math.PI / 2
     );
-    quat.multiply(r1);
+    quat.multiply(corrX);
 
-    // Taille proportionnelle à la largeur de la main
+    // Taille
     const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
-   const scale = Math.max(3.0, Math.min(8.0, wristWidth * 13.0));
+    const scale = Math.max(2.5, Math.min(7.0, wristWidth * 11.0));
 
-    // Position : juste au dessus du poignet (20% vers les MCP)
-   const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.08);
+    // Position : sur le poignet (très proche du point 0)
+    const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.12);
 
-    // Lissage
     if (!this.smoothPos) {
       this.smoothPos  = pos.clone();
       this.smoothQuat = quat.clone();
