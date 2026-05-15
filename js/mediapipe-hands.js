@@ -113,14 +113,12 @@ class HandTracker {
     const quat = new THREE.Quaternion().setFromRotationMatrix(mat);
 
     // Correction : allonger la montre dans l'axe du bras
-   const corrX = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(1, 0, 0), Math.PI / 2
+   // Le cadran doit regarder vers le haut (vers le ciel)
+// Rotation autour de Z pour aligner dans l'axe du bras
+const corrZ = new THREE.Quaternion().setFromAxisAngle(
+  new THREE.Vector3(0, 0, 1), Math.PI / 2
 );
-const corrY = new THREE.Quaternion().setFromAxisAngle(
-  new THREE.Vector3(0, 1, 0), -Math.PI / 2
-);
-quat.multiply(corrX);
-quat.multiply(corrY);
+quat.multiply(corrZ);
 
     // Taille
     const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
