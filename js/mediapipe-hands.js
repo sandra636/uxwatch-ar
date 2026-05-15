@@ -70,10 +70,10 @@ class HandTracker {
   }
 
   _computeWristPose(lm) {
-    const W = lm[0];   // poignet
-    const I = lm[5];   // index MCP
-    const P = lm[17];  // auriculaire MCP
-    const M = lm[9];   // majeur MCP
+    const W = lm[0];
+    const I = lm[5];
+    const P = lm[17];
+    const M = lm[9];
 
     const isRear = document.getElementById('camera-feed').classList.contains('rear');
     const mx = isRear ? -1 : 1;
@@ -95,31 +95,29 @@ class HandTracker {
     const pV = ts(P.x, P.y, P.z);
     const mV = ts(M.x, M.y, M.z);
 
-    // Axe du bras : poignet → MCP majeur
-    const axisArm = new THREE.Vector3().subVectors(mV, wV).normalize();
+    const forearm  = new THREE.Vector3().subVectors(mV, wV).normalize();
+    const handWidth = new THREE.Vector3().subVectors(iV, pV).normalize();
+    const normal   = new THREE.Vector3().crossVectors(handWidth, forearm).normalize();
 
-    // Axe largeur main : auriculaire → index
-    const axisWidth = new THREE.Vector3().subVectors(iV, pV).normalize();
+    const axisX = handWidth.clone();
+    const axisZ = forearm.clone();
+    const axisY = new THREE.Vector3().crossVectors(axisZ, axisX).normalize();
 
-    // Normale au plan de la main (vers le haut quand paume vers le bas)
-    const axisNormal = new THREE.Vector3().crossVectors(axisArm, axisWidth).normalize();
-
-    // Base orthonormale
-    // X = largeur du bras
-    // Y = normale (vers le ciel quand paume vers le bas)
-    // Z = axe du bras
-    const axisX = axisWidth.clone();
-    const axisY = axisNormal.clone();
-    const axisZ = axisArm.clone();
-
-    const mat = new THREE.Matrix4().makeBasis(axisX, axisY, axisZ);
+    const mat  = new THREE.Matrix4().makeBasis(axisX, axisY, axisZ);
     const quat = new THREE.Quaternion().setFromRotationMatrix(mat);
 
-    // Taille proportionnelle à la largeur du poignet
+    const corrX = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(1, 0, 0), Math.PI / 2
+    );
+    const corrY = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0), Math.PI
+    );
+    quat.multiply(corrX);
+    quat.multiply(corrY);
+
     const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
     const scale = Math.max(1.5, Math.min(5.0, wristWidth * 8.0));
 
-    // Position : sur le poignet
     const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.15);
 
     if (!this.smoothPos) {
