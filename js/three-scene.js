@@ -90,6 +90,7 @@ class ThreeScene {
           });
 
           model.rotation.set(0, 0, 0);
+model.rotation.set(Math.PI / 2, 0, 0);
           model.visible = false;
           this.scene.add(model);
           this.watches[i] = model;
