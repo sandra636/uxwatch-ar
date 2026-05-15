@@ -125,10 +125,10 @@ class HandTracker {
 
     // Taille proportionnelle à la largeur de la main
     const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
-    const scale = Math.max(2.0, Math.min(7.0, wristWidth * 10.0));
+   const scale = Math.max(3.0, Math.min(8.0, wristWidth * 13.0));
 
     // Position : juste au dessus du poignet (20% vers les MCP)
-    const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.20);
+   const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.08);
 
     // Lissage
     if (!this.smoothPos) {
