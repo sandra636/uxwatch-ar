@@ -110,10 +110,14 @@ class HandTracker {
 
     const rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
     const quat = new THREE.Quaternion().setFromRotationMatrix(rotMat);
-    const fixQ = new THREE.Quaternion().setFromAxisAngle(
+   const fixQ1 = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0), Math.PI / 2
     );
-    quat.multiply(fixQ);
+const fixQ2 = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 0, 1), Math.PI / 2
+    );
+quat.multiply(fixQ1);
+quat.multiply(fixQ2);
 
     // Taille basée sur la largeur réelle du poignet dans l'image
     const wristWidth = new THREE.Vector3().subVectors(indexV, pinkyV).length();
@@ -121,7 +125,7 @@ class HandTracker {
     const targetScale = Math.max(2.5, Math.min(8.0, wristWidth * 12.0));
 
     // Position exacte sur le poignet (entre wrist et MCP)
-    const position = new THREE.Vector3().lerpVectors(wristV, midV, 0.35);
+   const position = new THREE.Vector3().lerpVectors(wristV, midV, 0.25);
 
     if (!this.smoothPos) {
       this.smoothPos  = position.clone();
