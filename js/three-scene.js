@@ -36,26 +36,18 @@ class ThreeScene {
     this.camera.position.set(0, 0, 5);
 
     this._setupLights();
-
-    // Resize d'abord
-    this._onResize();
+    this._loadAllWatches();
     window.addEventListener('resize', () => this._onResize(), { passive: true });
-
-    // Charger les montres après resize
-    setTimeout(() => this._loadAllWatches(), 100);
   }
 
   _setupLights() {
-    this.scene.add(new THREE.AmbientLight(0xffffff, 2.5));
-    const key = new THREE.DirectionalLight(0xffeedd, 3.0);
-    key.position.set(2, 4, 3);
-    this.scene.add(key);
-    const fill = new THREE.DirectionalLight(0xc9e0ff, 1.5);
-    fill.position.set(-3, 2, -2);
-    this.scene.add(fill);
-    const rim = new THREE.PointLight(0xc9a96e, 2.5, 12);
-    rim.position.set(0, -2, 3);
-    this.scene.add(rim);
+    this.scene.add(new THREE.AmbientLight(0xffffff, 3.0));
+    const key = new THREE.DirectionalLight(0xffeedd, 4.0);
+    key.position.set(2, 4, 3); this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0xffffff, 2.0);
+    fill.position.set(-3, 2, -2); this.scene.add(fill);
+    const bot = new THREE.DirectionalLight(0xffffff, 1.5);
+    bot.position.set(0, -3, 2); this.scene.add(bot);
   }
 
   forceResize() { this._onResize(); }
@@ -74,38 +66,27 @@ class ThreeScene {
   }
 
   _loadAllWatches() {
-    if (typeof THREE.GLTFLoader === 'undefined') {
-      console.error('GLTFLoader non disponible !');
-      return;
-    }
-
     const loader = new THREE.GLTFLoader();
-
     WATCH_CATALOG.forEach((def, i) => {
-      console.log('Chargement montre ' + i + ': ' + def.path);
-
+      console.log('Chargement:', def.path);
       loader.load(
         def.path,
         (gltf) => {
-          console.log('✅ Montre ' + i + ' chargée');
+          console.log('OK:', def.path);
           const model = gltf.scene;
 
-          // Taille uniforme
           const box = new THREE.Box3().setFromObject(model);
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z);
-          const s = 0.8 / maxDim;
+          const s = 1.0 / maxDim;
           model.scale.setScalar(s);
           model.position.sub(center.multiplyScalar(s));
 
-          // Orientation correcte sur le poignet
-          model.rotation.set(Math.PI / 2, 0, 0);
-
           model.traverse(child => {
             if (child.isMesh) {
-              child.castShadow = true;
-              child.receiveShadow = true;
+              child.castShadow = false;
+              child.frustumCulled = false;
               if (child.material) {
                 child.material.side = THREE.DoubleSide;
                 child.material.needsUpdate = true;
@@ -113,39 +94,31 @@ class ThreeScene {
             }
           });
 
-          // IMPORTANT : visible = false par défaut
           model.visible = false;
           this.scene.add(model);
           this.watches[i] = model;
-
-          // La première montre devient active
           if (i === 0) {
             this.watchGroup = model;
-            console.log('✅ Montre par défaut prête');
+            console.log('Montre 1 prête');
           }
         },
-        (progress) => {
-          if (progress.total > 0) {
-            console.log('Montre ' + i + ': ' +
-              Math.round(progress.loaded / progress.total * 100) + '%');
-          }
+        (xhr) => {
+          if (xhr.total > 0)
+            console.log(def.path + ': ' + Math.round(xhr.loaded/xhr.total*100) + '%');
         },
         (err) => {
-          console.error('❌ Erreur GLB ' + i + ':', err);
+          console.error('Erreur chargement ' + def.path, err);
         }
       );
     });
   }
 
   switchWatch(index) {
-    if (this.watches[this.currentWatch]) {
+    if (this.watches[this.currentWatch])
       this.watches[this.currentWatch].visible = false;
-    }
     this.currentWatch = index;
     this.watchGroup = this.watches[index];
-    if (this.watchGroup) {
-      this.watchGroup.visible = this.watchVisible;
-    }
+    if (this.watchGroup) this.watchGroup.visible = this.watchVisible;
   }
 
   updateWristPose(pose) {
