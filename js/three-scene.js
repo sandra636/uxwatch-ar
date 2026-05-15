@@ -13,7 +13,7 @@ class ThreeScene {
     this.watchVisible = false;
     this.smoothAlpha = 0.25;
     this.scaleTarget = 1.0; this.scaleSmooth = 1.0;
-    this.clock = new THREE.Clock();
+    this.pendingPose = null;
     this.fpsEl = document.getElementById('fps-counter');
     this.lastFpsTime = performance.now();
     this.frameCount = 0;
@@ -68,13 +68,12 @@ class ThreeScene {
   _loadAllWatches() {
     const loader = new THREE.GLTFLoader();
     WATCH_CATALOG.forEach((def, i) => {
-      console.log('Chargement:', def.path);
       loader.load(
         def.path,
         (gltf) => {
-          console.log('OK:', def.path);
           const model = gltf.scene;
 
+          // Normaliser taille
           const box = new THREE.Box3().setFromObject(model);
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
@@ -85,7 +84,6 @@ class ThreeScene {
 
           model.traverse(child => {
             if (child.isMesh) {
-              child.castShadow = false;
               child.frustumCulled = false;
               if (child.material) {
                 child.material.side = THREE.DoubleSide;
@@ -97,18 +95,20 @@ class ThreeScene {
           model.visible = false;
           this.scene.add(model);
           this.watches[i] = model;
+
+          // Dès que la montre 0 est prête, l'activer immédiatement
           if (i === 0) {
             this.watchGroup = model;
-            console.log('Montre 1 prête');
+            console.log('✅ Montre 0 prête');
+            // Si une pose était en attente, l'appliquer maintenant
+            if (this.pendingPose) {
+              this.updateWristPose(this.pendingPose);
+              this.pendingPose = null;
+            }
           }
         },
-        (xhr) => {
-          if (xhr.total > 0)
-            console.log(def.path + ': ' + Math.round(xhr.loaded/xhr.total*100) + '%');
-        },
-        (err) => {
-          console.error('Erreur chargement ' + def.path, err);
-        }
+        null,
+        (err) => { console.error('Erreur GLB ' + i, err); }
       );
     });
   }
@@ -117,14 +117,30 @@ class ThreeScene {
     if (this.watches[this.currentWatch])
       this.watches[this.currentWatch].visible = false;
     this.currentWatch = index;
-    this.watchGroup = this.watches[index];
-    if (this.watchGroup) this.watchGroup.visible = this.watchVisible;
+    if (this.watches[index]) {
+      this.watchGroup = this.watches[index];
+      this.watchGroup.visible = this.watchVisible;
+    } else {
+      // Attendre que la montre charge
+      const iv = setInterval(() => {
+        if (this.watches[index]) {
+          this.watchGroup = this.watches[index];
+          this.watchGroup.visible = this.watchVisible;
+          clearInterval(iv);
+        }
+      }, 200);
+    }
   }
 
   updateWristPose(pose) {
     if (!pose) {
       this.watchVisible = false;
       if (this.watchGroup) this.watchGroup.visible = false;
+      return;
+    }
+    // Si montre pas encore chargée, mémoriser la pose
+    if (!this.watchGroup) {
+      this.pendingPose = pose;
       return;
     }
     this.watchVisible = true;
@@ -136,18 +152,16 @@ class ThreeScene {
   render() {
     if (this.width === 0 || this.height === 0) this._onResize();
 
-    if (this.watchGroup) {
-      if (this.watchVisible) {
-        this.currentPos.lerp(this.targetPos, this.smoothAlpha);
-        this.currentQuat.slerp(this.targetQuat, this.smoothAlpha * 0.85);
-        this.scaleSmooth += (this.scaleTarget - this.scaleSmooth) * 0.15;
-        this.watchGroup.position.copy(this.currentPos);
-        this.watchGroup.quaternion.copy(this.currentQuat);
-        this.watchGroup.scale.setScalar(this.scaleSmooth);
-        this.watchGroup.visible = true;
-      } else {
-        this.watchGroup.visible = false;
-      }
+    if (this.watchGroup && this.watchVisible) {
+      this.currentPos.lerp(this.targetPos, this.smoothAlpha);
+      this.currentQuat.slerp(this.targetQuat, this.smoothAlpha * 0.85);
+      this.scaleSmooth += (this.scaleTarget - this.scaleSmooth) * 0.15;
+      this.watchGroup.position.copy(this.currentPos);
+      this.watchGroup.quaternion.copy(this.currentQuat);
+      this.watchGroup.scale.setScalar(this.scaleSmooth);
+      this.watchGroup.visible = true;
+    } else if (this.watchGroup) {
+      this.watchGroup.visible = false;
     }
 
     this.renderer.render(this.scene, this.camera);
