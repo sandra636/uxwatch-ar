@@ -92,7 +92,7 @@ class ThreeScene {
             }
           });
 
-          model.visible = false;
+          model.visible = true;
           this.scene.add(model);
           this.watches[i] = model;
 
@@ -111,6 +111,7 @@ class ThreeScene {
         (err) => { console.error('Erreur GLB ' + i, err); }
       );
     });
+
   }
 
   switchWatch(index) {
