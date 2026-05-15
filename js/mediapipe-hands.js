@@ -22,14 +22,12 @@ class HandTracker {
       locateFile: (file) =>
         `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
     });
-
     this.hands.setOptions({
       maxNumHands:            1,
       modelComplexity:        0,
       minDetectionConfidence: 0.5,
       minTrackingConfidence:  0.4,
     });
-
     this.hands.onResults((results) => this._onResults(results));
   }
 
@@ -40,7 +38,6 @@ class HandTracker {
     if (this.video.paused) {
       await this.video.play().catch(() => {});
     }
-
     await new Promise(res => {
       if (this.video.readyState >= 2) { res(); return; }
       this.video.onloadeddata = res;
@@ -58,7 +55,6 @@ class HandTracker {
       }
       this.rafId = requestAnimationFrame(sendFrame);
     };
-
     this.rafId = requestAnimationFrame(sendFrame);
   }
 
@@ -97,10 +93,10 @@ class HandTracker {
   }
 
   _computeWristPose(lm) {
-    const W = lm[0];   // poignet
-    const I = lm[5];   // index MCP
-    const P = lm[17];  // auriculaire MCP
-    const M = lm[9];   // majeur MCP
+    const W = lm[0];
+    const I = lm[5];
+    const P = lm[17];
+    const M = lm[9];
 
     const isFront = !document.getElementById('camera-feed').classList.contains('rear');
     const mirrorX = isFront ? 1 : -1;
@@ -123,48 +119,35 @@ class HandTracker {
     const pinkyV = toScene(P.x, P.y, P.z);
     const midV   = toScene(M.x, M.y, M.z);
 
-    // Axe principal : poignet → majeur
-    const zAxis = new THREE.Vector3()
-      .subVectors(midV, wristV).normalize();
-
-    // Axe lateral : auriculaire → index
-    const xAxis = new THREE.Vector3()
-      .subVectors(indexV, pinkyV).normalize();
-
-    // Axe Y perpendiculaire
-    const yAxis = new THREE.Vector3()
-      .crossVectors(zAxis, xAxis).normalize();
+    const zAxis = new THREE.Vector3().subVectors(midV, wristV).normalize();
+    const xAxis = new THREE.Vector3().subVectors(indexV, pinkyV).normalize();
+    const yAxis = new THREE.Vector3().crossVectors(zAxis, xAxis).normalize();
     xAxis.crossVectors(yAxis, zAxis).normalize();
 
     const rotMat = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
     const quat   = new THREE.Quaternion().setFromRotationMatrix(rotMat);
 
-    // Correction orientation pour GLB
-    const fix1 = new THREE.Quaternion().setFromAxisAngle(
+    const fixQuat = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(1, 0, 0), Math.PI / 2
     );
-    const fix2 = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 0, 1), Math.PI / 2
-    );
-    quat.multiply(fix1).multiply(fix2);
+    quat.multiply(fixQuat);
 
-    // Taille selon largeur du poignet
-    const wristWidth = new THREE.Vector3()
-      .subVectors(indexV, pinkyV).length();
-    const targetScale = Math.max(0.2, Math.min(1.8, wristWidth * 1.5));
+    const wristWidth = new THREE.Vector3().subVectors(indexV, pinkyV).length();
+    const targetScale = Math.max(0.3, Math.min(2.5, wristWidth * 3.2));
 
-    // Position exacte au creux du poignet
-    const cx = wristV.x * 0.8 + midV.x * 0.2;
-    const cy = wristV.y * 0.8 + midV.y * 0.2;
-    const cz = wristV.z * 0.8 + midV.z * 0.2;
-    const midpoint = new THREE.Vector3(cx, cy, cz);
+    const midpoint = new THREE.Vector3()
+      .addVectors(wristV, midV)
+      .multiplyScalar(0.45);
+
+    const offset = new THREE.Vector3().copy(zAxis).multiplyScalar(-0.08 * targetScale);
+    midpoint.add(offset);
 
     if (!this.smoothPos) {
       this.smoothPos  = midpoint.clone();
       this.smoothQuat = quat.clone();
     } else {
-      this.smoothPos.lerp(midpoint, 0.35);
-      this.smoothQuat.slerp(quat, 0.3);
+      this.smoothPos.lerp(midpoint, 0.4);
+      this.smoothQuat.slerp(quat, 0.35);
     }
 
     return {
@@ -179,7 +162,6 @@ class HandTracker {
     const W   = this.dbgCanvas.width;
     const H   = this.dbgCanvas.height;
     ctx.clearRect(0, 0, W, H);
-
     if (!results.multiHandLandmarks) return;
 
     results.multiHandLandmarks.forEach(lm => {
@@ -199,7 +181,6 @@ class HandTracker {
         ctx.lineTo(lm[b].x * W, lm[b].y * H);
         ctx.stroke();
       });
-
       lm.forEach((p, i) => {
         ctx.beginPath();
         ctx.arc(p.x * W, p.y * H, i === 0 ? 6 : 3, 0, Math.PI * 2);
