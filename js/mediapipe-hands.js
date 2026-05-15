@@ -126,7 +126,7 @@ class HandTracker {
 
     // Taille proportionnelle à la largeur du poignet
     const wristWidth = new THREE.Vector3().subVectors(indexV, pinkyV).length();
-    const targetScale = Math.max(0.3, Math.min(2.5, wristWidth * 3.2));
+    const targetScale = Math.max(1.5, Math.min(6.0, wristWidth * 8.0));
 
     // CORRIGÉ : position = moyenne poignet + milieu MCP (pas 0.45 !)
     const midpoint = new THREE.Vector3()

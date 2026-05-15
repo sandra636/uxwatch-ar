@@ -78,7 +78,7 @@ class ThreeScene {
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z);
-          const s = 0.8 / maxDim;
+         const s = 1.8 / maxDim;
           model.scale.setScalar(s);
           model.position.sub(center.multiplyScalar(s));
 
