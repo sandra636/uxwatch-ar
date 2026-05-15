@@ -16,6 +16,7 @@ class ThreeScene {
     this.fpsEl = document.getElementById('fps-counter');
     this.lastFpsTime = performance.now();
     this.frameCount = 0;
+    this.loadedCount = 0;
     this._init();
   }
 
@@ -69,6 +70,8 @@ class ThreeScene {
         def.path,
         (gltf) => {
           const model = gltf.scene;
+
+          // Normaliser taille
           const box = new THREE.Box3().setFromObject(model);
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
@@ -76,6 +79,7 @@ class ThreeScene {
           const s = 1.0 / maxDim;
           model.scale.setScalar(s);
           model.position.sub(center.multiplyScalar(s));
+
           model.traverse(child => {
             if (child.isMesh) {
               child.frustumCulled = false;
@@ -85,14 +89,19 @@ class ThreeScene {
               }
             }
           });
+
+          // Toutes les montres cachées sauf la première
           model.visible = false;
           this.scene.add(model);
           this.watches[i] = model;
-         if (i === this.currentWatch) {
-    this.watchGroup = model;
-    model.visible = false;
-}
-console.log('✅ Montre ' + i + ' prête');
+          this.loadedCount++;
+
+          // Activer watchGroup dès que montre 0 est prête
+          if (i === 0) {
+            this.watchGroup = model;
+          }
+
+          console.log('Montre ' + i + ' chargée (' + this.loadedCount + '/3)');
         },
         null,
         (err) => { console.error('Erreur GLB ' + i, err); }
@@ -101,22 +110,30 @@ console.log('✅ Montre ' + i + ' prête');
   }
 
   switchWatch(index) {
-    if (this.watches[this.currentWatch])
-      this.watches[this.currentWatch].visible = false;
+    console.log('Switch vers montre ' + index + ', chargées: ' + this.loadedCount);
+
+    // Cacher toutes les montres
+    this.watches.forEach(w => { if (w) w.visible = false; });
+
     this.currentWatch = index;
+
     if (this.watches[index]) {
+      // Montre déjà chargée
       this.watchGroup = this.watches[index];
       this.watchGroup.visible = this.watchVisible;
+      console.log('Montre ' + index + ' activée');
     } else {
+      // Montre pas encore chargée — attendre
+      console.log('Montre ' + index + ' pas prête, attente...');
       const iv = setInterval(() => {
         if (this.watches[index]) {
-          if (this.watches[this.currentWatch])
-            this.watches[this.currentWatch].visible = false;
+          this.watches.forEach(w => { if (w) w.visible = false; });
           this.watchGroup = this.watches[index];
           this.watchGroup.visible = this.watchVisible;
+          console.log('Montre ' + index + ' activée après attente');
           clearInterval(iv);
         }
-      }, 200);
+      }, 100);
     }
   }
 
@@ -134,6 +151,7 @@ console.log('✅ Montre ' + i + ' prête');
 
   render() {
     if (this.width === 0 || this.height === 0) this._onResize();
+
     if (this.watchGroup && this.watchVisible) {
       this.currentPos.lerp(this.targetPos, this.smoothAlpha);
       this.currentQuat.slerp(this.targetQuat, this.smoothAlpha * 0.85);
@@ -145,7 +163,9 @@ console.log('✅ Montre ' + i + ' prête');
     } else if (this.watchGroup) {
       this.watchGroup.visible = false;
     }
+
     this.renderer.render(this.scene, this.camera);
+
     this.frameCount++;
     const now = performance.now();
     if (now - this.lastFpsTime >= 1000) {
