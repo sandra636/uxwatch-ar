@@ -120,10 +120,10 @@ class HandTracker {
 
     // Taille
     const wristWidth = new THREE.Vector3().subVectors(iV, pV).length();
-    const scale = Math.max(2.5, Math.min(7.0, wristWidth * 11.0));
+   const scale = Math.max(1.0, Math.min(3.5, wristWidth * 6.0));
 
     // Position : sur le poignet (très proche du point 0)
-    const pos = new THREE.Vector3().lerpVectors(wV, mV, 0.12);
+   const pos = wV.clone();
 
     if (!this.smoothPos) {
       this.smoothPos  = pos.clone();

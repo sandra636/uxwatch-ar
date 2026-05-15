@@ -78,7 +78,7 @@ class ThreeScene {
           const center = box.getCenter(new THREE.Vector3());
           const size = box.getSize(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z);
-         const s = 3.5 / maxDim;
+         const s = 2.5 / maxDim;
           model.scale.setScalar(s);
           model.position.sub(center.multiplyScalar(s));
 
@@ -88,7 +88,7 @@ class ThreeScene {
               child.material.side = THREE.DoubleSide;
             }
           });
-
+          model.rotation.set(0, 0, 0);
           model.visible = false;
           this.scene.add(model);
           this.watches[i] = model;
