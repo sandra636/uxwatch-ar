@@ -88,12 +88,11 @@ class ThreeScene {
           model.visible = false;
           this.scene.add(model);
           this.watches[i] = model;
-          if (i === 0) {
-            this.watchGroup = model;
-            console.log('✅ Montre ' + i + ' prête');
-          } else {
-            console.log('✅ Montre ' + i + ' prête');
-          }
+         if (i === this.currentWatch) {
+    this.watchGroup = model;
+    model.visible = false;
+}
+console.log('✅ Montre ' + i + ' prête');
         },
         null,
         (err) => { console.error('Erreur GLB ' + i, err); }
