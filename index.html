@@ -10,12 +10,9 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
 
-  <!-- Three.js r128 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js" crossorigin="anonymous"></script>
-  <!-- GLTFLoader OBLIGATOIRE ici avant les autres scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js" crossorigin="anonymous"></script>
+  <script src="js/GLTFLoader.js"></script>
 
-  <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 
@@ -62,7 +59,6 @@
 </head>
 <body>
 
-  <!-- LOADER -->
   <div id="loader">
     <div class="loader-inner">
       <div class="loader-logo">
@@ -90,7 +86,6 @@
     </div>
   </div>
 
-  <!-- PERMISSION -->
   <div id="permission-overlay" class="hidden">
     <div class="perm-card">
       <div class="perm-icon">📷</div>
@@ -100,7 +95,6 @@
     </div>
   </div>
 
-  <!-- APP -->
   <div id="app" class="hidden">
 
     <header id="header">
@@ -149,15 +143,15 @@
         <p class="panel-label">Choisissez votre montre</p>
         <div id="watch-selector">
           <button class="watch-thumb active" data-watch="0">
-            <img src="assets/images/w1.svg" alt="Classic Gold" onerror="this.style.display='none'" />
+            <img src="assets/images/w1.png" alt="Classic Gold" onerror="this.style.display='none'" />
             <span>Classic Gold</span>
           </button>
           <button class="watch-thumb" data-watch="1">
-            <img src="assets/images/w2.svg" alt="Silver Sport" onerror="this.style.display='none'" />
+            <img src="assets/images/w2.png" alt="Silver Sport" onerror="this.style.display='none'" />
             <span>Silver Sport</span>
           </button>
           <button class="watch-thumb" data-watch="2">
-            <img src="assets/images/w3.svg" alt="Black Edition" onerror="this.style.display='none'" />
+            <img src="assets/images/w3.png" alt="Black Edition" onerror="this.style.display='none'" />
             <span>Black Edition</span>
           </button>
         </div>
@@ -165,12 +159,16 @@
 
       <div id="info-strip">
         <div class="info-item">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
           <span id="watch-name-display">Classic Gold</span>
         </div>
         <div class="info-separator"></div>
         <div class="info-item">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          </svg>
           <span>AR Haute précision</span>
         </div>
       </div>
@@ -180,7 +178,6 @@
 
   </div>
 
-  <!-- ERREUR -->
   <div id="error-screen" class="hidden">
     <div class="error-card">
       <div class="error-icon">⚠️</div>
@@ -190,7 +187,6 @@
     </div>
   </div>
 
-  <!-- Scripts dans le bon ordre -->
   <script src="js/watch-models.js"></script>
   <script src="js/three-scene.js"></script>
   <script src="js/mediapipe-hands.js"></script>
